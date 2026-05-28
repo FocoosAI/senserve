@@ -1,0 +1,98 @@
+:root {
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  color: #e8e8e8;
+  background: #121212;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+select,
+button,
+textarea {
+  font: inherit;
+}
+
+select,
+button {
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid #444;
+  background: #1e1e1e;
+  color: inherit;
+}
+
+button:disabled {
+  opacity: 0.5;
+}
+
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 12rem;
+  margin-bottom: 1rem;
+}
+
+.msg {
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  white-space: pre-wrap;
+}
+
+.msg.user {
+  background: #2a3a5c;
+  align-self: flex-end;
+  max-width: 90%;
+}
+
+.msg.assistant {
+  background: #252525;
+}
+
+.msg.error {
+  background: #4a2020;
+  color: #ffb4b4;
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+textarea {
+  width: 100%;
+  min-height: 4rem;
+  padding: 0.6rem;
+  border-radius: 8px;
+  border: 1px solid #444;
+  background: #1a1a1a;
+  color: inherit;
+  resize: vertical;
+}
+
+.status {
+  font-size: 0.85rem;
+  color: #999;
+}

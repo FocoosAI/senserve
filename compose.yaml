@@ -1,0 +1,65 @@
+# Senserve + Open WebUI. Requires NVIDIA Container Toolkit.
+#
+#   docker compose up --build
+#
+# Open WebUI: http://localhost:8788  →  Settings → Connections: OpenAI API
+#   Base URL http://localhost:8787/v1  (pre-filled via env below)
+# Model switch: pick a model in the chat UI (catalog from GET /v1/models).
+
+services:
+  senserve:
+    build: .
+    ports:
+      - "8787:8787"
+    environment:
+      SENSERVE_API_PORT: "8787"
+      SENSERVE_WORKER_PORT: "8000"
+      HF_HOME: /data/hf_cache
+      # DGX GH200 (Hopper): sm90. DGX Spark (Blackwell): use FLASHINFER_CUDA_ARCH_LIST=12.0a
+      TORCH_CUDA_ARCH_LIST: "9.0a"
+      FLASHINFER_CUDA_ARCH_LIST: "9.0a"
+      # Avoid FlashInfer JIT sampler (fails when arch list empty in container)
+      VLLM_USE_FLASHINFER_SAMPLER: "0"
+      NVIDIA_VISIBLE_DEVICES: all
+      # vLLM worker (aligned with standalone dgx-vllm compose)
+      CUDA_VISIBLE_DEVICES: "0"
+      NCCL_P2P_DISABLE: "1"
+      VLLM_WORKER_MULTIPROC_METHOD: fork
+    volumes:
+      - ./data/hf_cache:/data/hf_cache
+      - ./config:/app/config:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    # Default: load Qwen3.5 0.8B (id qwen3.5-0.8b in config/models.toml)
+    command: ["uv", "run", "senserve", "--load", "qwen3.5-0.8b"]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8787/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 900s
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    ports:
+      - "8788:8080"
+    environment:
+      # OpenAI-compatible connection to Senserve (model list + chat + hot-swap)
+      OPENAI_API_BASE_URL: http://senserve:8787/v1
+      OPENAI_API_KEY: sk-senserve-local
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:-change-me-in-production}
+      ENABLE_OPENAI_API: "true"
+      ENABLE_OLLAMA_API: "false"
+    volumes:
+      - open-webui-data:/app/backend/data
+    depends_on:
+      senserve:
+        condition: service_healthy
+
+volumes:
+  open-webui-data:

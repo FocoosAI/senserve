@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "keep": {
+      "source": "CuriousDolphin/KEEP",
+      "sourceType": "github",
+      "skillPath": "skills/KEEP/SKILL.md",
+      "computedHash": "08b5fd7acc2a4f8e6226247de53490003f04ff51076947f12a46ac0bc1d9c47d"
+    }
+  }
+}
