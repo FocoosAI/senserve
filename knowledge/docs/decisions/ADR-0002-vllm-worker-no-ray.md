@@ -8,8 +8,16 @@ domain: senserve
 tags: [architecture, vllm]
 related:
   - spec:SPEC-senserve-server
+  - adr:ADR-0001-single-llm-deployment
 supersedes:
   - adr:ADR-0001-single-llm-deployment
+anchors:
+  - id: engine-load
+    claim: EngineSupervisor loads one model via background thread after stopping prior worker
+    kind: function
+    file: src/senserve/engine.py
+    symbol: load
+    signature: "(self, model_id: str) -> None"
 ---
 
 ## Context
