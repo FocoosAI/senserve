@@ -58,7 +58,7 @@ def _merge_toml(base: dict, overlay: dict) -> dict:
     return out
 
 
-_SENSERVE_ONLY_DEFAULTS = frozenset({"worker_port"})
+_SENSERVE_ONLY_DEFAULTS = frozenset({"worker_port", "worker_base_port"})
 
 
 def _default_vllm_opts(defaults: dict) -> dict[str, Any]:

@@ -1,13 +1,14 @@
 ---
 id: SPEC-senserve-server
 title: Senserve server
-description: Multimodal OpenAI-compatible gateway on port 8787. FastAPI proxies chat/models to a local vLLM worker (default 8000) with preprocessor hooks, single-active model hot-swap (503 + Retry-After during switch), and admin load/status endpoints.
+description: Multimodal OpenAI-compatible gateway on port 8787. FastAPI proxies chat/models to a lazy vLLM worker pool (sleep mode L2, base port 8000) with automatic sleep/wake on model switch, 503 + Retry-After, and admin load/status.
 status: accepted
 type: spec
 domain: senserve
 tags: [senserve, architecture, runbook, vllm, openai]
 related:
   - adr:ADR-0002-vllm-worker-no-ray
+  - adr:ADR-0003-vllm-sleep-mode-pool
   - code:src/senserve/engine.py
   - code:src/senserve/gateway/openai_routes.py
   - test:tests/test_gateway_switch.py matching test_chat_rejects_when_switching
@@ -18,18 +19,17 @@ anchors:
     file: src/senserve/settings.py
     symbol: api_port
     value: "8787"
-  - id: worker-port
-    claim: vLLM worker binds SENSERVE_WORKER_PORT default 8000
-    kind: const
-    file: src/senserve/settings.py
-    symbol: worker_port
-    value: "8000"
+  - id: worker-base-port
+    claim: Compose sets SENSERVE_WORKER_BASE_PORT to 8000
+    kind: manual
+    file: compose.yaml
+    notes: "Per-model ports are base+index when sleep mode enabled"
   - id: switching-503
     claim: Model switch returns 503 with Retry-After 30
     kind: function
     file: src/senserve/gateway/errors.py
     symbol: switching_response
-    signature: '(message: str = "Model switch in progress") -> JSONResponse'
+    signature: '(message: str = "Model switch in progress", retry_after: int | None = None) -> JSONResponse'
   - id: chat-switch-test
     claim: Chat completions rejected with 503 while engine is switching
     kind: test
@@ -50,11 +50,11 @@ Client / Open WebUI
         │
         ▼  :8787  FastAPI (senserve.gateway)
         │         preprocessors → proxy
-        ▼  :8000  vllm serve (EngineSupervisor subprocess)
+        ▼  :8000+N  vllm serve pool (sleep/wake per model)
 ```
 
 - **Registry**: `config/models.toml` (+ optional `config/models.local.toml`) defines model ids, HF sources, preprocessors, vLLM CLI options.
-- **Engine** (`EngineSupervisor`): at most one worker process; `load` / `load_blocking` stop the previous `vllm serve` before starting the next.
+- **Engine** (`EngineSupervisor`): lazy pool — one `vllm serve --enable-sleep-mode` per model; `load` sleeps the active worker and wakes or starts the target (`SENSERVE_SLEEP_MODE=off` falls back to kill+restart).
 - **States**: `idle` → `switching` → `ready` | `error`.
 
 ## Requirements
@@ -102,5 +102,5 @@ Client / Open WebUI
 
 ## Related
 
-- Implements: [ADR-0002 — vLLM worker without Ray](../../decisions/ADR-0002-vllm-worker-no-ray.md)
+- Implements: [ADR-0002 — vLLM worker without Ray](../../decisions/ADR-0002-vllm-worker-no-ray.md), [ADR-0003 — Sleep mode pool](../../decisions/ADR-0003-vllm-sleep-mode-pool.md)
 - Supersedes operational path from: [ADR-0001 — Single Ray LLM deployment](../../decisions/ADR-0001-single-llm-deployment.md)

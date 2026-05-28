@@ -9,6 +9,7 @@ tags: [architecture, vllm]
 related:
   - spec:SPEC-senserve-server
   - adr:ADR-0001-single-llm-deployment
+  - adr:ADR-0003-vllm-sleep-mode-pool
 supersedes:
   - adr:ADR-0001-single-llm-deployment
 anchors:

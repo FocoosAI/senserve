@@ -21,7 +21,7 @@ def test_vllm_cmd_dotted_flags_and_booleans():
             "enable_auto_tool_choice": True,
         },
     )
-    cmd = _vllm_cmd(spec, 8000, {})
+    cmd = _vllm_cmd(spec, 8000, {}, sleep_enabled=False)
     assert cmd[:4] == ["vllm", "serve", "Qwen/Qwen3.5-0.8B", "--host"]
     assert "--trust-remote-code" in cmd
     assert "--skip-mm-profiling" in cmd

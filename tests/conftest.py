@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from senserve.engine import EngineState, EngineSupervisor
+from senserve.engine import EngineState, EngineSupervisor, WorkerState, _Worker
 from senserve.gateway.app import create_app
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -30,11 +30,13 @@ def registry(models_toml):
 
 @pytest.fixture
 def supervisor_ready(registry):
+    spec = registry.get("qwen3-vl-4b-awq")
     sup = EngineSupervisor(registry=registry)
     sup._state = EngineState.READY  # noqa: SLF001 — test double
-    sup._worker = type(  # noqa: SLF001
-        "W", (), {"spec": registry.get("qwen3-vl-4b-awq")}
-    )()
+    sup._active_id = spec.id  # noqa: SLF001
+    sup._workers = {  # noqa: SLF001
+        spec.id: _Worker(spec=spec, process=None, port=8000, state=WorkerState.READY),
+    }
     return sup
 
 

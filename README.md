@@ -1,6 +1,6 @@
 # Senserve
 
-OpenAI-compatible multimodal gateway over **vLLM** (no Ray). One active model per GPU by default (hot-swap); architecture allows multiple workers later.
+OpenAI-compatible multimodal gateway over **vLLM** (no Ray). One active model per GPU; fast hot-swap via [vLLM Sleep Mode](https://vllm.ai/blog/2025-10-26-sleep-mode) (lazy pool, one `vllm serve` per catalog model).
 
 ## Ports
 
@@ -8,7 +8,7 @@ OpenAI-compatible multimodal gateway over **vLLM** (no Ray). One active model pe
 |---------|------|-----|
 | Senserve API | **8787** | `SENSERVE_API_PORT` |
 | Open WebUI | **8788** | (Docker maps `8788→8080`) |
-| vLLM worker (internal) | **8000** | `SENSERVE_WORKER_PORT` |
+| vLLM workers (internal) | **8000+** | `SENSERVE_WORKER_BASE_PORT` (+1 per enabled model) |
 
 ## Quick start
 
@@ -29,7 +29,9 @@ Config: `config/models.toml` (optional `config/models.local.toml`).
 - `POST /v1/admin/models/load` — `{"model_id": "..."}`
 - `GET /v1/admin/models/status`
 
-During model switch: **503** + `Retry-After: 30`.
+During model switch: **503** + `Retry-After` (default 30s, `SENSERVE_SWITCH_RETRY_AFTER_S`).
+
+Model switching from Open WebUI is automatic: Senserve sleeps the active vLLM worker and wakes the target (no manual `/sleep` calls). Set `SENSERVE_SLEEP_MODE=off` to fall back to kill+restart.
 
 ## Docker + Open WebUI
 

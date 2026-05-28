@@ -16,12 +16,23 @@ def create_admin_router(supervisor: EngineSupervisor) -> APIRouter:
     @router.get("/models/status")
     def models_status():
         s = supervisor.status()
+        workers = [
+            {
+                "model_id": w.model_id,
+                "port": w.port,
+                "state": w.state.value,
+                "pid": w.pid,
+                "is_sleeping": w.is_sleeping,
+            }
+            for w in supervisor.list_workers()
+        ]
         return {
             "state": s.state.value,
             "active_model_id": s.active_model_id,
             "target_model_id": s.target_model_id,
             "message": s.message,
             "error": s.error,
+            "workers": workers,
         }
 
     @router.post("/models/load", status_code=202)

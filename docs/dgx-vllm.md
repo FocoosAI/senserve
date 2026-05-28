@@ -61,3 +61,17 @@ docker compose run --rm senserve uv run python -c \
 ```
 
 Atteso su GH200: `(9, 0)` o simile.
+
+## vLLM Sleep Mode (switch veloce)
+
+Senserve usa sleep mode per switch automatico tra modelli (`SENSERVE_SLEEP_MODE=level2`, `VLLM_SERVER_DEV_MODE=1` in `compose.yaml`).
+
+Verifica che l’immagine esponga gli endpoint admin prima del deploy:
+
+```bash
+uv run python scripts/verify_vllm_sleep.py --skip-serve  # con vLLM già avviato su --port
+# oppure avvio completo (richiede GPU):
+# VLLM_SERVER_DEV_MODE=1 vllm serve Qwen/Qwen3.5-0.8B --enable-sleep-mode --port 8010
+```
+
+Il **primo** caricamento di ogni modello resta lento (HF + warm-up); dal **secondo** switch in poi il wake è molto più rapido del restart completo.

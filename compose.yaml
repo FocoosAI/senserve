@@ -13,7 +13,9 @@ services:
       - "8787:8787"
     environment:
       SENSERVE_API_PORT: "8787"
-      SENSERVE_WORKER_PORT: "8000"
+      SENSERVE_WORKER_BASE_PORT: "8000"
+      SENSERVE_SLEEP_MODE: "level2"
+      VLLM_SERVER_DEV_MODE: "1"
       HF_HOME: /data/hf_cache
       # DGX GH200 (Hopper): sm90. DGX Spark (Blackwell): use FLASHINFER_CUDA_ARCH_LIST=12.0a
       TORCH_CUDA_ARCH_LIST: "9.0a"
