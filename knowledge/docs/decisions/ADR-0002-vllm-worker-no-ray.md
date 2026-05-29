@@ -1,7 +1,7 @@
 ---
 id: ADR-0002-vllm-worker-no-ray
 title: vLLM worker subprocess without Ray
-description: Replace Ray Serve LLM with a local vllm serve subprocess per active model; Senserve FastAPI gateway proxies OpenAI traffic after preprocessing.
+description: Replace Ray with local vllm serve subprocesses (one active in VRAM; lazy pool and sleep/wake per ADR-0003). FastAPI gateway on 8787 proxies OpenAI traffic after preprocessing.
 status: accepted
 type: adr
 domain: senserve
@@ -14,7 +14,7 @@ supersedes:
   - adr:ADR-0001-single-llm-deployment
 anchors:
   - id: engine-load
-    claim: EngineSupervisor loads one model via background thread after stopping prior worker
+    claim: EngineSupervisor.load orchestrates model switch (sleep/wake pool or kill+restart when sleep off)
     kind: function
     file: src/senserve/engine.py
     symbol: load
@@ -36,3 +36,7 @@ Ray added operational weight and Docker friction. vLLM already ships an OpenAI-c
 
 - Multi-model concurrent (A2) = multiple worker ports + supervisor policy (not yet implemented).
 - GPU required for model load; gateway runs without GPU when `--no-load`.
+
+## Refined by
+
+[ADR-0003 — vLLM sleep-mode lazy worker pool](./ADR-0003-vllm-sleep-mode-pool.md): default switch uses sleep Level 2 and a lazy pool (one `vllm serve --enable-sleep-mode` per catalog model, ports `SENSERVE_WORKER_BASE_PORT + index`) instead of terminating the previous process. `SENSERVE_SLEEP_MODE=off` preserves the kill+restart behavior described above on a single port.

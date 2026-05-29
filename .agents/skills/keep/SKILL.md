@@ -86,7 +86,7 @@ description: "Behavioral spec for JWT issuer/audience validation, expiry handlin
 status: accepted               # draft | accepted | deprecated | superseded
 type: spec                     # spec | adr | idea
 domain: auth
-tags: [auth, jwt, security]    # 'runbook' and 'architecture' are reserved tags
+tags: [auth, jwt, security]    # 'runbook' and 'architecture' are reserved tags — specs only, never on ADRs/ideas; one role per spec, never both
 related:
   - adr:ADR-0014
   - test:internal/auth/*_test.go matching TestJWT*

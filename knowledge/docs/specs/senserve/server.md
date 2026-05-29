@@ -9,6 +9,7 @@ tags: [senserve, architecture, runbook, vllm, openai]
 related:
   - adr:ADR-0002-vllm-worker-no-ray
   - adr:ADR-0003-vllm-sleep-mode-pool
+  - spec:SPEC-000-keep
   - code:src/senserve/engine.py
   - code:src/senserve/vllm_sleep.py
   - code:src/senserve/gateway/openai_routes.py
