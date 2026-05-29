@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -81,7 +82,9 @@ def create_openai_router(supervisor: EngineSupervisor) -> APIRouter:
 
         try:
             body = dict(body)
-            body["messages"] = preprocess_messages(messages, spec)
+            # Preprocessing fetches URLs and shells out to ffmpeg (blocking I/O +
+            # CPU); run it off the event loop so concurrent requests aren't stalled.
+            body["messages"] = await asyncio.to_thread(preprocess_messages, messages, spec)
         except CapabilityError as exc:
             return openai_error_response(str(exc))
 

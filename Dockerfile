@@ -1,5 +1,4 @@
-# CUDA devel (includes nvcc; required by vLLM/torch on some paths). Python 3.12 via uv.
-FROM isnob46/dgx-vllm-cu13:0171rc1
+FROM isnob46/dgx-vllm-cu13:0211rc1
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \

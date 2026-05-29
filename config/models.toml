@@ -14,10 +14,10 @@ tool_call_parser = "hermes"
 enable_auto_tool_choice = true
 "limit-mm-per-prompt.video" = 1
 media_io_kwargs = '{"video": {"num_frames": -1}}'
-speculative_config = '{"method": "mtp", "num_speculative_tokens": 3}'
-"structured-outputs-config.backend" = "guidance"
-"structured-outputs-config.disable_any_whitespace" = true
-"structured-outputs-config.disable_additional_properties" = true
+
+#"structured-outputs-config.backend" = "guidance"
+#"structured-outputs-config.disable_any_whitespace" = true
+#"structured-outputs-config.disable_additional_properties" = true
 
 [[models]]
 id = "qwen3.5-0.8b"
@@ -27,7 +27,7 @@ capabilities = ["text"]
 preprocessor = "none"
 enabled = true
 default = true
-
+speculative_config = '{"method": "mtp", "num_speculative_tokens": 3}'
 [[models]]
 # id kept for API compatibility; weights are full Instruct (not AWQ).
 id = "qwen3-vl-4b-awq"
