@@ -239,6 +239,8 @@ _IGNORE_DIRS = {
     "node_modules", ".git", "dist", "build", "target", "vendor",
     ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache",
     "knowledge",   # don't count knowledge files themselves
+    ".agents",     # bundled KEEP scripts when self-installed into the repo
+                   # — those are tooling, not user code. Same logic as node_modules.
 }
 
 

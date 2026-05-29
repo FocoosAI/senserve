@@ -274,9 +274,14 @@ def build_index(root: pathlib.Path) -> tuple[str, list[KnowledgeFile]]:
             superseded.append(kf)
             continue
         by_type[kf.type].append(kf)
-        if "runbook" in kf.tags:
+        # `runbook` and `architecture` are reserved tags that modify the *role* of a
+        # spec (behavioral → operational, behavioral → topological). They are NOT
+        # generic descriptors. ADRs and ideas with these tags do not belong in these
+        # INDEX sections — their nature is already captured by `type:`. Filtering by
+        # type+tag here keeps the section title's promise: "specs with tag ...".
+        if kf.type == "spec" and "runbook" in kf.tags:
             by_tag_runbook.append(kf)
-        if "architecture" in kf.tags:
+        if kf.type == "spec" and "architecture" in kf.tags:
             by_tag_architecture.append(kf)
 
     # Sort each group: by domain, then by id
