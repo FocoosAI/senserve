@@ -10,8 +10,10 @@ related:
   - adr:ADR-0002-vllm-worker-no-ray
   - adr:ADR-0003-vllm-sleep-mode-pool
   - code:src/senserve/engine.py
+  - code:src/senserve/vllm_sleep.py
   - code:src/senserve/gateway/openai_routes.py
   - test:tests/test_gateway_switch.py matching test_chat_rejects_when_switching
+  - test:tests/test_engine_sleep.py matching test_vllm_cmd_includes_sleep_flag
 anchors:
   - id: api-port
     claim: Gateway listens on SENSERVE_API_PORT default 8787
@@ -24,12 +26,23 @@ anchors:
     kind: manual
     file: compose.yaml
     notes: "Per-model ports are base+index when sleep mode enabled"
+  - id: switch-retry-after
+    claim: Default Retry-After for model switch is 30 seconds
+    kind: const
+    file: src/senserve/settings.py
+    symbol: switch_retry_after_s
+    value: "30"
   - id: switching-503
-    claim: Model switch returns 503 with Retry-After 30
+    claim: Model switch returns 503 with configurable Retry-After header
     kind: function
     file: src/senserve/gateway/errors.py
     symbol: switching_response
     signature: '(message: str = "Model switch in progress", retry_after: int | None = None) -> JSONResponse'
+  - id: sleep-flag-test
+    claim: vLLM cmd includes --enable-sleep-mode when sleep enabled
+    kind: test
+    file: tests/test_engine_sleep.py
+    symbol: test_vllm_cmd_includes_sleep_flag
   - id: chat-switch-test
     claim: Chat completions rejected with 503 while engine is switching
     kind: test
@@ -63,9 +76,9 @@ Client / Open WebUI
 - `GET /v1/models` — catalog from registry; `loaded: true` on the active ready model.
 - `POST /v1/chat/completions` — requires `model` and `messages`; preprocesses per model spec; proxies to worker `/v1/chat/completions` (JSON or SSE stream).
 - `POST /v1/admin/models/load` — `{"model_id": "..."}` returns **202** accepted; **503** if already switching.
-- `GET /v1/admin/models/status` — engine state, active/target model ids, message, error.
-- If requested model ≠ active: trigger background `load` and return **503** until ready.
-- During `switching`: **503** + `Retry-After: 30` + `code: model_switching`.
+- `GET /v1/admin/models/status` — engine state, active/target model ids, message, error, plus `workers[]` (`model_id`, `port`, `state`, `pid`, `is_sleeping`) for each pool member.
+- If requested model ≠ active: trigger background `load` (sleep active worker, wake or cold-start target) and return **503** until ready — **automatic** from Open WebUI model picker + chat; no manual vLLM `/sleep` calls.
+- During `switching`: **503** + `Retry-After` (default 30, `SENSERVE_SWITCH_RETRY_AFTER_S`) + `code: model_switching`.
 - Upload limit: `SENSERVE_MAX_UPLOAD_BYTES` (default 300 MiB) via `MaxBodySizeMiddleware`.
 - CORS defaults include Open WebUI on `http://localhost:8788`.
 
@@ -76,6 +89,8 @@ Client / Open WebUI
 - No model loaded (`--no-load`) → chat returns **503** until a model is loaded.
 - Startup `--load MODEL_ID` or default from registry / `SENSERVE_DEFAULT_MODEL_ID` (`qwen3.5-0.8b`); failure exits CLI with code 1.
 - Worker readiness polled up to `worker_ready_timeout_s` (default 600s) against worker `GET /v1/models`.
+- `SENSERVE_SLEEP_MODE=off`: single port, kill+restart on switch (legacy).
+- Per-model worker ports: `SENSERVE_WORKER_BASE_PORT + index` over enabled models sorted by id (when sleep mode on).
 
 ## Docker / Open WebUI
 
@@ -93,6 +108,16 @@ Client / Open WebUI
 
 - **Causes**: wrong CUDA arch env (see `docs/dgx-vllm.md`); FlashInfer issues; OOM.
 - **Mitigation**: adjust `TORCH_CUDA_ARCH_LIST` / `FLASHINFER_CUDA_ARCH_LIST`; set `VLLM_USE_FLASHINFER_SAMPLER=0` in compose.
+
+### Symptoms: switch stays slow after first use
+
+- **Causes**: vLLM image without sleep mode; `VLLM_SERVER_DEV_MODE` unset; wake L2 still reloading large weights from disk.
+- **Mitigation**: run `uv run python scripts/verify_vllm_sleep.py` on DGX; confirm `SENSERVE_SLEEP_MODE=level2` and compose env; check `workers[].is_sleeping` in admin status.
+
+### Symptoms: sleep/wake errors in logs (`VllmSleepError`)
+
+- **Causes**: worker process died; admin endpoints 404; sleep called while worker not ready.
+- **Mitigation**: inspect worker logs; set `SENSERVE_SLEEP_MODE=off` temporarily; kill stale processes on worker ports.
 
 ## Acceptance criteria
 
