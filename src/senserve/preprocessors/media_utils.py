@@ -1,18 +1,10 @@
-"""Fetch and transform multimodal message parts."""
+"""Fetch and normalize multimodal message parts for vLLM."""
 
 from __future__ import annotations
 
 import base64
-import glob
-import os
-import subprocess
-import tempfile
-from pathlib import Path
 from typing import Any
-from urllib.parse import unquote_to_bytes
 from urllib.request import urlopen
-
-from senserve.settings import get_settings
 
 
 def parse_data_url(url: str) -> tuple[bytes, str]:
@@ -42,51 +34,9 @@ def fetch_url_bytes(url: str, max_bytes: int) -> tuple[bytes, str]:
     return data, mime
 
 
-def write_temp_file(data: bytes, suffix: str, temp_dir: Path) -> Path:
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    fd, name = tempfile.mkstemp(suffix=suffix, dir=temp_dir)
-    os.close(fd)
-    path = Path(name)
-    path.write_bytes(data)
-    return path
-
-
-def extract_video_frames(video_path: Path, max_frames: int, temp_dir: Path) -> list[Path]:
-    """Extract up to max_frames JPEG frames using ffmpeg."""
-    pattern = str(temp_dir / f"{video_path.stem}_frame_%04d.jpg")
-    vf = (
-        f"select='not(mod(n\\,max(1\\,floor(n/{max_frames}))))',scale=512:-1"
-    )
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(video_path),
-            "-vf",
-            vf,
-            "-frames:v",
-            str(max_frames),
-            pattern,
-        ],
-        check=True,
-        capture_output=True,
-    )
-    return sorted(Path(p) for p in glob.glob(str(temp_dir / f"{video_path.stem}_frame_*.jpg")))
-
-
-def part_to_image_url(path: Path) -> dict[str, Any]:
-    data = base64.standard_encode(path.read_bytes()).decode("ascii")
-    return {
-        "type": "image_url",
-        "image_url": {"url": f"data:image/jpeg;base64,{data}"},
-    }
-
-
-def expand_message_parts(
-    parts: list[Any], max_frames: int, max_bytes: int, temp_dir: Path
-) -> list[Any]:
-    """Expand video_url parts into image_url frames; pass through other parts."""
+def normalize_message_parts(parts: list[Any], max_bytes: int) -> list[Any]:
+    """Keep video_url parts for vLLM; inline remote URLs as base64 data URLs."""
+    changed = False
     out: list[Any] = []
     for part in parts:
         if not isinstance(part, dict):
@@ -96,11 +46,27 @@ def expand_message_parts(
         if ptype not in ("video_url", "video"):
             out.append(part)
             continue
-        block = part.get("video_url") or part.get("video") or {}
-        url = block.get("url", "") if isinstance(block, dict) else ""
-        data, _mime = fetch_url_bytes(url, max_bytes)
-        suffix = ".mp4" if "mp4" in url.lower() else ".bin"
-        video_path = write_temp_file(data, suffix, temp_dir)
-        for frame in extract_video_frames(video_path, max_frames, temp_dir):
-            out.append(part_to_image_url(frame))
-    return out
+        normalized = _normalize_video_part(part, max_bytes)
+        if normalized is not part:
+            changed = True
+        out.append(normalized)
+    return parts if not changed else out
+
+
+def _normalize_video_part(part: dict[str, Any], max_bytes: int) -> dict[str, Any]:
+    key = "video_url" if part.get("type") == "video_url" else "video"
+    block = part.get(key) or {}
+    if not isinstance(block, dict):
+        raise ValueError("Invalid video part")
+    url = block.get("url", "")
+    if url.startswith("file:"):
+        return part
+    if url.startswith("data:"):
+        fetch_url_bytes(url, max_bytes)
+        return part
+    if not url.startswith(("http://", "https://")):
+        return part
+    data, mime = fetch_url_bytes(url, max_bytes)
+    encoded = base64.standard_b64encode(data).decode("ascii")
+    return {**part, key: {**block, "url": f"data:{mime};base64,{encoded}"}}
+

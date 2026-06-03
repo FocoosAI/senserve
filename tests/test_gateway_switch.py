@@ -25,5 +25,7 @@ def test_list_models(client_ready):
     assert by_id["qwen3-vl-4b-awq"]["source"] == "Qwen/Qwen3-VL-4B-Instruct"
     assert by_id["qwen3-vl-4b-awq"]["status"] == "ready"
     assert by_id["qwen3-vl-4b-awq"]["loaded"] is True
+    assert by_id["qwen3-vl-4b-awq"]["capabilities"] == ["text", "video", "vision"]
     assert by_id["gemma-4-26b-a4b-it"]["status"] == "cold"
+    assert by_id["gemma-4-26b-a4b-it"]["capabilities"] == ["image", "text"]
     assert by_id["gemma-4-26b-a4b-it"]["loaded"] is False

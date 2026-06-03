@@ -10,7 +10,7 @@ _Do not edit by hand — re-run the script after any /keep-compile._
 | ID | Title | Description | Domain | Status | Tags | Path |
 |---|---|---|---|---|---|---|
 | SPEC-000-keep | KEEP — knowledge-layer conventions | How this repository uses KEEP: the /knowledge layout, mandatory YAML frontmatter, anchors and drift… | keep | accepted | keep, architecture, meta | docs/specs/keep/SPEC-000-keep.md |
-| SPEC-senserve-server | Senserve server | Multimodal OpenAI-compatible gateway on port 8787. FastAPI proxies chat/models to a lazy vLLM worke… | senserve | accepted | senserve, architecture, runbook, vllm, openai | docs/specs/senserve/server.md |
+| SPEC-senserve-server | Senserve server | Multimodal OpenAI-compatible gateway on port 8787. Proxies chat/models to a lazy vLLM pool (sleep L… | senserve | accepted | senserve, architecture, runbook, vllm, openai | docs/specs/senserve/server.md |
 
 
 ## ADRs
@@ -25,7 +25,7 @@ _Do not edit by hand — re-run the script after any /keep-compile._
 
 | ID | Title | Description | Domain | Path |
 |---|---|---|---|---|
-| SPEC-senserve-server | Senserve server | Multimodal OpenAI-compatible gateway on port 8787. FastAPI proxies chat/models to a lazy vLLM worke… | senserve | docs/specs/senserve/server.md |
+| SPEC-senserve-server | Senserve server | Multimodal OpenAI-compatible gateway on port 8787. Proxies chat/models to a lazy vLLM pool (sleep L… | senserve | docs/specs/senserve/server.md |
 
 
 ## Architecture (specs with tag `architecture`)
@@ -33,7 +33,7 @@ _Do not edit by hand — re-run the script after any /keep-compile._
 | ID | Title | Description | Domain | Path |
 |---|---|---|---|---|
 | SPEC-000-keep | KEEP — knowledge-layer conventions | How this repository uses KEEP: the /knowledge layout, mandatory YAML frontmatter, anchors and drift… | keep | docs/specs/keep/SPEC-000-keep.md |
-| SPEC-senserve-server | Senserve server | Multimodal OpenAI-compatible gateway on port 8787. FastAPI proxies chat/models to a lazy vLLM worke… | senserve | docs/specs/senserve/server.md |
+| SPEC-senserve-server | Senserve server | Multimodal OpenAI-compatible gateway on port 8787. Proxies chat/models to a lazy vLLM pool (sleep L… | senserve | docs/specs/senserve/server.md |
 
 
 ## Superseded

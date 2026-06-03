@@ -21,15 +21,23 @@ uv run senserve --load gemma-4-26b-a4b-it
 
 Config: `config/models.toml` (optional `config/models.local.toml`).
 
+## Dashboard
+
+Operational UI (model status, worker pool, load/switch): **http://localhost:8787/ui/**
+
+Bind Senserve to localhost only in untrusted networks; admin endpoints have no auth.
+
 ## API
 
 - `GET /health`
-- `GET /v1/models` — catalog; `loaded: true` on active model
+- `GET /v1/models` — catalog; `loaded`, `capabilities`, per-model `status`
 - `POST /v1/chat/completions`
 - `POST /v1/admin/models/load` — `{"model_id": "..."}`
 - `GET /v1/admin/models/status`
 
 During model switch: **503** + `Retry-After` (default 30s, `SENSERVE_SWITCH_RETRY_AFTER_S`).
+
+Chat bodies are forwarded to vLLM as-is by default (`SENSERVE_INLINE_REMOTE_MEDIA=0`). Optional `SENSERVE_INLINE_REMOTE_MEDIA=1` fetches HTTP(S) `video_url` into base64 data URLs. Set `allowed_local_media_path` in `config/models.toml` and mount media into the container (see compose `./datasets:/datasets`).
 
 Model switching from Open WebUI is automatic: Senserve sleeps the active vLLM worker and wakes the target (no manual `/sleep` calls). Set `SENSERVE_SLEEP_MODE=off` to fall back to kill+restart.
 
@@ -47,6 +55,16 @@ Open WebUI is preconfigured with `OPENAI_API_BASE_URL=http://senserve:8787/v1`. 
 Requires NVIDIA GPU and the NVIDIA Container Toolkit.
 
 **DGX / GH200 (aarch64):** see [docs/dgx-vllm.md](docs/dgx-vllm.md) if you hit FlashInfer or wheel issues.
+
+## Dataset video inference
+
+With Docker running and a video-capable model loaded (e.g. `qwen3-vl-4b-awq`):
+
+```bash
+uv run python scripts/infer_dataset_videos.py --dataset datasets --model auto
+```
+
+Encodes each video as a base64 data URL by default. Use `--media file` for `file:///datasets/<name>.mp4` when the container has `./datasets` mounted.
 
 ## Tests
 

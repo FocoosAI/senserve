@@ -8,3 +8,4 @@ config/models.local.toml
 dist/
 build/
 web/node_modules/
+datasets/

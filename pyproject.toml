@@ -26,6 +26,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/senserve"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/senserve/gateway/static" = "senserve/gateway/static"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

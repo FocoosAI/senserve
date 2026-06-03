@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Senserve</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="header">
+    <div>
+      <h1>Senserve</h1>
+      <p class="subtitle">Dashboard operativa</p>
+    </div>
+    <p id="last-refresh" class="muted">—</p>
+  </header>
+
+  <section id="banner-switch" class="banner hidden" role="status"></section>
+  <section id="banner-error" class="banner banner-error hidden" role="alert"></section>
+
+  <section class="cards" id="status-cards" aria-label="Stato sistema"></section>
+
+  <section class="summary" id="summary" aria-label="Riepilogo"></section>
+
+  <section class="table-wrap">
+    <h2>Modelli</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Nome</th>
+          <th>ID</th>
+          <th>Stato</th>
+          <th>Attivo</th>
+          <th>Capabilities</th>
+          <th>Porta</th>
+          <th>PID</th>
+          <th>Sleep</th>
+          <th>Sorgente</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="models-body"></tbody>
+    </table>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>

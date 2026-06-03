@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from senserve import __version__
 from senserve.engine import EngineState, EngineSupervisor
@@ -9,6 +12,8 @@ from senserve.gateway.admin_routes import create_admin_router
 from senserve.gateway.middleware import MaxBodySizeMiddleware
 from senserve.gateway.openai_routes import create_openai_router
 from senserve.settings import get_settings
+
+_UI_DIR = Path(__file__).resolve().parent / "static" / "ui"
 
 
 def create_app(supervisor: EngineSupervisor | None = None) -> FastAPI:
@@ -40,4 +45,8 @@ def create_app(supervisor: EngineSupervisor | None = None) -> FastAPI:
 
     app.include_router(create_openai_router(sup))
     app.include_router(create_admin_router(sup))
+
+    if _UI_DIR.is_dir():
+        app.mount("/ui", StaticFiles(directory=_UI_DIR, html=True), name="ui")
+
     return app

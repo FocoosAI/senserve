@@ -57,6 +57,7 @@ def create_openai_router(supervisor: EngineSupervisor) -> APIRouter:
                     "source": spec.source,
                     "status": _catalog_model_status(spec.id, workers_by_id, st),
                     "loaded": is_loaded,
+                    "capabilities": sorted(spec.capabilities),
                 }
             )
         return {"object": "list", "data": data}
@@ -100,10 +101,10 @@ def create_openai_router(supervisor: EngineSupervisor) -> APIRouter:
 
         try:
             body = dict(body)
-            # Preprocessing fetches URLs and shells out to ffmpeg (blocking I/O +
-            # CPU); run it off the event loop so concurrent requests aren't stalled.
             body["messages"] = await asyncio.to_thread(preprocess_messages, messages, spec)
         except CapabilityError as exc:
+            return openai_error_response(str(exc))
+        except ValueError as exc:
             return openai_error_response(str(exc))
 
         stream = bool(body.get("stream"))

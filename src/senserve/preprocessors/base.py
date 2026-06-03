@@ -1,40 +1,17 @@
-"""Preprocessor registry and capability checks."""
+"""Lightweight chat message checks before proxying to vLLM."""
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+import copy
 from typing import Any
 
+from senserve.preprocessors.media_utils import normalize_message_parts
 from senserve.registry import ModelSpec
-
-_REGISTRY: dict[str, type[Preprocessor]] = {}
+from senserve.settings import get_settings
 
 
 class CapabilityError(ValueError):
     """Request uses a modality the active model cannot handle."""
-
-
-class Preprocessor(ABC):
-    @abstractmethod
-    def process_messages(
-        self, messages: list[dict[str, Any]], spec: ModelSpec
-    ) -> list[dict[str, Any]]:
-        ...
-
-
-def register(name: str):
-    def deco(cls: type[Preprocessor]) -> type[Preprocessor]:
-        _REGISTRY[name] = cls
-        return cls
-
-    return deco
-
-
-def get_preprocessor(name: str) -> Preprocessor:
-    try:
-        return _REGISTRY[name]()
-    except KeyError as exc:
-        raise KeyError(f"Unknown preprocessor: {name}") from exc
 
 
 def validate_capabilities(messages: list[dict[str, Any]], spec: ModelSpec) -> None:
@@ -62,9 +39,25 @@ def validate_capabilities(messages: list[dict[str, Any]], spec: ModelSpec) -> No
 def preprocess_messages(
     messages: list[dict[str, Any]], spec: ModelSpec
 ) -> list[dict[str, Any]]:
-    validate_capabilities(messages, spec)
-    return get_preprocessor(spec.preprocessor).process_messages(messages, spec)
+    """Optional capability check and HTTP video inlining; otherwise pass through."""
+    settings = get_settings()
+    if settings.validate_capabilities:
+        validate_capabilities(messages, spec)
+    if not settings.inline_remote_media:
+        return messages
 
-
-# Import implementations to register.
-from senserve.preprocessors import gemma4, none, qwen_vl  # noqa: E402, F401
+    max_bytes = settings.max_upload_bytes
+    out: list[dict[str, Any]] = []
+    for msg in messages:
+        content = msg.get("content")
+        if not isinstance(content, list):
+            out.append(msg)
+            continue
+        normalized = normalize_message_parts(content, max_bytes)
+        if normalized is content:
+            out.append(msg)
+            continue
+        m = copy.deepcopy(msg)
+        m["content"] = normalized
+        out.append(m)
+    return out

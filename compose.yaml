@@ -16,6 +16,7 @@ services:
       SENSERVE_API_PORT: "8787"
       SENSERVE_WORKER_BASE_PORT: "8000"
       SENSERVE_SLEEP_MODE: "level2"
+      SENSERVE_INLINE_REMOTE_MEDIA: "0"
       VLLM_SERVER_DEV_MODE: "1"
       HF_HOME: /root/.cache/huggingface
       #HF_HUB_OFFLINE: "1"
@@ -33,6 +34,7 @@ services:
       - ~/.cache/huggingface:/root/.cache/huggingface
       - ~/.cache/vllm:/root/.cache/vllm
       - ./config:/app/config:ro
+      - ./datasets:/datasets:ro
     deploy:
       resources:
         reservations:
@@ -41,13 +43,13 @@ services:
               count: 1
               capabilities: [gpu]
     # Default: load Qwen3.5 0.8B (id qwen3.5-0.8b in config/models.toml)
-    command: ["uv", "run", "senserve", "--load", "qwen3.5-0.8b"]
+    command: ["uv", "run", "senserve"]
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:8787/health"]
       interval: 15s
-      timeout: 10s
-      retries: 10
-      start_period: 900s
+      timeout: 20s
+      retries: 30
+      start_period: 100s
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:main

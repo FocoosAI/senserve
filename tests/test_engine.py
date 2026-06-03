@@ -8,7 +8,6 @@ def test_vllm_cmd_dotted_flags_and_booleans():
         display_name="Qwen3.5 0.8B",
         source="Qwen/Qwen3.5-0.8B",
         capabilities=frozenset({"text"}),
-        preprocessor="none",
         enabled=True,
         vllm={
             "trust_remote_code": True,

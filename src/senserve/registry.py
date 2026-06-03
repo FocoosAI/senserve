@@ -14,7 +14,6 @@ class ModelSpec:
     display_name: str
     source: str
     capabilities: frozenset[str]
-    preprocessor: str
     enabled: bool
     vllm: dict[str, Any] = field(default_factory=dict)
     default: bool = False
@@ -103,7 +102,6 @@ def load_registry(path: Path | None = None) -> ModelRegistry:
             display_name=entry.get("display_name", model_id),
             source=entry["source"],
             capabilities=frozenset(caps),
-            preprocessor=entry.get("preprocessor", "none"),
             enabled=entry.get("enabled", True),
             vllm=vllm,
             default=bool(entry.get("default")),

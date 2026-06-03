@@ -24,8 +24,9 @@ class Settings(BaseSettings):
     models_path: Path = Field(default=_REPO_ROOT / "config" / "models.toml")
     default_model_id: str = "qwen3.5-0.8b"
     max_upload_bytes: int = 300 * 1024 * 1024
-    video_max_frames: int = 16
-    temp_dir: Path = Field(default=Path("/tmp/senserve"))
+    # When false, chat bodies are forwarded to vLLM unchanged (besides capability checks).
+    inline_remote_media: bool = False
+    validate_capabilities: bool = True
     worker_ready_timeout_s: float = 600.0
     switch_retry_after_s: int = 30
     sleep_mode: Literal["off", "level1", "level2"] = "level2"
