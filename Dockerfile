@@ -2,7 +2,7 @@ FROM isnob46/dgx-vllm-cu13:0211rc1
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
-    HF_HOME=/data/hf_cache \
+    HF_HOME=/root/.cache/huggingface \
     UV_PYTHON=3.12 \
     TORCH_CUDA_ARCH_LIST=9.0a \
     FLASHINFER_CUDA_ARCH_LIST=9.0a \

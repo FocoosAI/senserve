@@ -2,18 +2,20 @@
 
 [defaults]
 worker_port = 8000
-# vLLM flags (global; per-model [models.vllm] overrides)
+# vLLM flags shared by all models; per-model overrides in each [[models]].vllm
 tensor_parallel_size = 1
 trust_remote_code = true
 skip_mm_profiling = true
-max_model_len = "auto"
+#max_model_len = "auto"
 mm_encoder_tp_mode = "data"
-gpu_memory_utilization = 0.85
+gpu_memory_utilization = 0.8
 load_format = "fastsafetensors"
 tool_call_parser = "hermes"
 enable_auto_tool_choice = true
 "limit-mm-per-prompt.video" = 1
 media_io_kwargs = '{"video": {"num_frames": -1}}'
+max_model_len = 4064
+#allowed_local_media_path = "/root/storage"
 
 #"structured-outputs-config.backend" = "guidance"
 #"structured-outputs-config.disable_any_whitespace" = true
@@ -23,32 +25,29 @@ media_io_kwargs = '{"video": {"num_frames": -1}}'
 id = "qwen3.5-0.8b"
 display_name = "Qwen3.5 0.8B"
 source = "Qwen/Qwen3.5-0.8B"
-capabilities = ["text"]
+capabilities = ["text", "vision", "video"]
 preprocessor = "none"
 enabled = true
 default = true
-speculative_config = '{"method": "mtp", "num_speculative_tokens": 3}'
+vllm = { speculative_config = '{"method": "mtp", "num_speculative_tokens": 3}' }
+
 [[models]]
 # id kept for API compatibility; weights are full Instruct (not AWQ).
 id = "qwen3-vl-4b-awq"
 display_name = "Qwen3-VL 4B Instruct"
-source = "Qwen/Qwen3-VL-4B-Instruct"
+source = "cpatonn/Qwen3-VL-4B-Instruct-AWQ-4bit"
 capabilities = ["text", "vision", "video"]
 preprocessor = "qwen_vl"
 enabled = true
-
-[models.vllm]
 # Only set quantization if source is a pre-quantized HF repo (e.g. *-FP8).
 # Lower VRAM: source = "Qwen/Qwen3-VL-4B-Instruct-FP8"
-max_model_len = 8192
+#vllm = { max_model_len = 8192 }
 
 [[models]]
-id = "gemma-4-26b-a4b-it"
-display_name = "Gemma 4 26B IT"
-source = "google/gemma-4-26B-A4B-it"
-capabilities = ["text", "image"]
+id = "gemma-4-26b-a4b-nvfp4"
+display_name = "Gemma 4 26B NVFP4"
+source = "nvidia/Gemma-4-26B-A4B-NVFP4"
+capabilities = ["text", "image", "video"]
 preprocessor = "gemma4"
 enabled = true
-
-[models.vllm]
-max_model_len = 8192
+#vllm = { max_model_len = 8192 }

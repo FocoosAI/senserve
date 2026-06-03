@@ -10,11 +10,25 @@ import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from senserve.engine import EngineState, EngineSupervisor, NotReadyError, SwitchingError
+from senserve.engine import EngineState, EngineStatus, EngineSupervisor, NotReadyError, SwitchingError, WorkerInfo
 from senserve.gateway.errors import openai_error_response, switching_response
 from senserve.preprocessors import CapabilityError, preprocess_messages
 
 logger = logging.getLogger(__name__)
+
+
+def _catalog_model_status(
+    model_id: str,
+    workers_by_id: dict[str, WorkerInfo],
+    st: EngineStatus,
+) -> str:
+    """Per-model worker state for /v1/models (Senserve extension, not OpenAI core)."""
+    worker = workers_by_id.get(model_id)
+    if worker is not None:
+        return worker.state.value
+    if st.state == EngineState.SWITCHING and st.target_model_id == model_id:
+        return "starting"
+    return "cold"
 
 
 def create_openai_router(supervisor: EngineSupervisor) -> APIRouter:
@@ -26,6 +40,7 @@ def create_openai_router(supervisor: EngineSupervisor) -> APIRouter:
         active = supervisor.active_model_id()
         st = supervisor.status()
         ready = st.state == EngineState.READY
+        workers_by_id = {w.model_id: w for w in supervisor.list_workers()}
         now = int(time.time())
         data = []
         for i, spec in enumerate(supervisor.registry.list_enabled()):
@@ -38,6 +53,9 @@ def create_openai_router(supervisor: EngineSupervisor) -> APIRouter:
                     "owned_by": "senserve",
                     # Open WebUI shows id in the selector; name helps humans.
                     "name": spec.display_name,
+                    # Senserve extensions (OpenAI Model object is id/object/created/owned_by only).
+                    "source": spec.source,
+                    "status": _catalog_model_status(spec.id, workers_by_id, st),
                     "loaded": is_loaded,
                 }
             )

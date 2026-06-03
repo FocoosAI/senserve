@@ -49,6 +49,22 @@ anchors:
     kind: test
     file: tests/test_gateway_switch.py
     symbol: test_chat_rejects_when_switching
+  - id: catalog-model-status
+    claim: Per-model catalog status uses worker state, starting when switch targets model, else cold
+    kind: function
+    file: src/senserve/gateway/openai_routes.py
+    symbol: _catalog_model_status
+    signature: '(model_id: str, workers_by_id: dict[str, WorkerInfo], st: EngineStatus) -> str'
+  - id: list-models-extensions-test
+    claim: test_list_models asserts source, status, and loaded on catalog entries
+    kind: test
+    file: tests/test_gateway_switch.py
+    symbol: test_list_models
+  - id: compose-hf-cache
+    claim: Compose bind-mounts host Hugging Face and vLLM caches into the container
+    kind: manual
+    file: compose.yaml
+    notes: "HF_HOME=/root/.cache/huggingface; volumes ~/.cache/huggingface and ~/.cache/vllm"
 ---
 
 # Senserve server
@@ -67,14 +83,14 @@ Client / Open WebUI
         ▼  :8000+N  vllm serve pool (sleep/wake per model)
 ```
 
-- **Registry**: `config/models.toml` (+ optional `config/models.local.toml`) defines model ids, HF sources, preprocessors, vLLM CLI options.
+- **Registry**: `config/models.toml` (+ optional `config/models.local.toml`) defines model ids, HF sources, capabilities, preprocessors; shared vLLM flags under `[defaults]`, per-model overrides in `[[models]].vllm`.
 - **Engine** (`EngineSupervisor`): lazy pool — one `vllm serve --enable-sleep-mode` per model; `load` sleeps the active worker and wakes or starts the target (`SENSERVE_SLEEP_MODE=off` falls back to kill+restart).
 - **States**: `idle` → `switching` → `ready` | `error`.
 
 ## Requirements
 
 - `GET /health` — gateway ok; `ready` when engine state is `ready`.
-- `GET /v1/models` — catalog from registry; `loaded: true` on the active ready model.
+- `GET /v1/models` — catalog from registry (OpenAI core fields plus Senserve extensions: `name`, `source` HF repo, `status`, `loaded`). `status` is the pool worker's state when present; `starting` when the engine is `switching` and this model is the switch target; otherwise `cold`. `loaded: true` only on the active model while engine state is `ready`.
 - `POST /v1/chat/completions` — requires `model` and `messages`; preprocesses per model spec; proxies to worker `/v1/chat/completions` (JSON or SSE stream).
 - `POST /v1/admin/models/load` — `{"model_id": "..."}` returns **202** accepted; **503** if already switching.
 - `GET /v1/admin/models/status` — engine state, active/target model ids, message, error, plus `workers[]` (`model_id`, `port`, `state`, `pid`, `is_sleeping`) for each pool member.
@@ -92,10 +108,13 @@ Client / Open WebUI
 - Worker readiness polled up to `worker_ready_timeout_s` (default 600s) against worker `GET /v1/models`.
 - `SENSERVE_SLEEP_MODE=off`: single port, kill+restart on switch (legacy).
 - Per-model worker ports: `SENSERVE_WORKER_BASE_PORT + index` over enabled models sorted by id (when sleep mode on).
+- During `switching`, catalog `status` for `target_model_id` is `starting` even before a worker row exists.
 
 ## Docker / Open WebUI
 
 `compose.yaml` publishes **8787** (Senserve) and **8788** (Open WebUI). Open WebUI uses `OPENAI_API_BASE_URL=http://senserve:8787/v1`. Default container command loads `qwen3.5-0.8b`. Requires NVIDIA GPU + Container Toolkit.
+
+Container `mem_limit` is **118g**. `HF_HOME` is `/root/.cache/huggingface`, bind-mounted from the host `~/.cache/huggingface`; `~/.cache/vllm` is mounted at `/root/.cache/vllm`. Production catalog (not test fixtures) includes default `qwen3.5-0.8b`, vision `qwen3-vl-4b-awq` (AWQ weights), and `gemma-4-26b-a4b-nvfp4`.
 
 ## Runbook
 
@@ -125,6 +144,7 @@ Client / Open WebUI
 - `uv run pytest tests/ -q` passes.
 - `GET /health` returns `ready: true` after successful model load.
 - Model switch during chat yields **503** with `retry-after: 30` (`test_chat_rejects_when_switching`).
+- `GET /v1/models` exposes `source`, per-model `status`, and `loaded` (`test_list_models`).
 
 ## Related
 

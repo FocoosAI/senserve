@@ -9,6 +9,7 @@
 services:
   senserve:
     build: .
+    mem_limit: "118g"
     ports:
       - "8787:8787"
     environment:
@@ -16,7 +17,8 @@ services:
       SENSERVE_WORKER_BASE_PORT: "8000"
       SENSERVE_SLEEP_MODE: "level2"
       VLLM_SERVER_DEV_MODE: "1"
-      HF_HOME: /data/hf_cache
+      HF_HOME: /root/.cache/huggingface
+      #HF_HUB_OFFLINE: "1"
       # DGX GH200 (Hopper): sm90. DGX Spark (Blackwell): use FLASHINFER_CUDA_ARCH_LIST=12.0a
       TORCH_CUDA_ARCH_LIST: "9.0a"
       FLASHINFER_CUDA_ARCH_LIST: "9.0a"
@@ -28,7 +30,8 @@ services:
       NCCL_P2P_DISABLE: "1"
       VLLM_WORKER_MULTIPROC_METHOD: fork
     volumes:
-      - ./data/hf_cache:/data/hf_cache
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ~/.cache/vllm:/root/.cache/vllm
       - ./config:/app/config:ro
     deploy:
       resources:
