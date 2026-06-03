@@ -35,12 +35,16 @@ def main() -> None:
         model_id = args.load
         if not model_id:
             default = supervisor.registry.default_model()
-            model_id = default.id if default else settings.default_model_id
-        try:
-            supervisor.load_blocking(model_id)
-        except Exception:
-            logging.exception("Startup model load failed")
-            sys.exit(1)
+            if default is None:
+                logging.info("No default model in catalog; starting idle (use Load or --load)")
+            else:
+                model_id = default.id
+        if model_id:
+            try:
+                supervisor.load_blocking(model_id)
+            except Exception:
+                logging.exception("Startup model load failed")
+                sys.exit(1)
 
     app = create_app(supervisor)
     uvicorn.run(app, host="0.0.0.0", port=settings.api_port, log_level="info")

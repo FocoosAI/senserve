@@ -1,11 +1,12 @@
-"""Load model catalog from TOML."""
+"""Load model catalog from YAML."""
 
 from __future__ import annotations
 
-import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 
 @dataclass(frozen=True)
@@ -33,11 +34,9 @@ class ModelRegistry:
             raise KeyError(f"Unknown model_id: {model_id}") from exc
 
     def default_model(self) -> ModelSpec | None:
+        """First enabled model explicitly marked default: true in catalog."""
         for spec in self.models.values():
             if spec.default and spec.enabled:
-                return spec
-        for spec in self.models.values():
-            if spec.enabled:
                 return spec
         return None
 
@@ -45,13 +44,13 @@ class ModelRegistry:
         return [m for m in self.models.values() if m.enabled]
 
 
-def _merge_toml(base: dict, overlay: dict) -> dict:
+def _merge_config(base: dict, overlay: dict) -> dict:
     out = dict(base)
     for key, val in overlay.items():
         if key == "models" and isinstance(val, list):
             out.setdefault("models", []).extend(val)
         elif isinstance(val, dict) and isinstance(out.get(key), dict):
-            out[key] = _merge_toml(out[key], val)
+            out[key] = _merge_config(out[key], val)
         else:
             out[key] = val
     return out
@@ -61,7 +60,7 @@ _SENSERVE_ONLY_DEFAULTS = frozenset({"worker_port", "worker_base_port"})
 
 
 def _default_vllm_opts(defaults: dict) -> dict[str, Any]:
-    """Merge [defaults] and [defaults.vllm] into vLLM CLI options."""
+    """Merge defaults and defaults.vllm into vLLM CLI options."""
     opts: dict[str, Any] = {
         k: v for k, v in defaults.items() if k not in _SENSERVE_ONLY_DEFAULTS and k != "vllm"
     }
@@ -71,16 +70,32 @@ def _default_vllm_opts(defaults: dict) -> dict[str, Any]:
     return opts
 
 
-def load_registry(path: Path | None = None) -> ModelRegistry:
-    """Parse config/models.toml (+ optional models.local.toml)."""
-    from senserve.settings import get_settings
+def _load_yaml_file(path: Path) -> dict:
+    suffix = path.suffix.lower()
+    if suffix == ".toml":
+        raise ValueError(
+            f"Model catalog must be YAML (.yaml/.yml), not TOML: {path}. "
+            "See config/models.yaml."
+        )
+    if suffix not in (".yaml", ".yml"):
+        raise ValueError(f"Model catalog must be a .yaml or .yml file: {path}")
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError(f"Model catalog root must be a mapping: {path}")
+    return raw
 
-    cfg_path = path or get_settings().models_path
-    data = tomllib.loads(cfg_path.read_text(encoding="utf-8"))
-    local = cfg_path.parent / "models.local.toml"
-    if local.is_file():
-        data = _merge_toml(data, tomllib.loads(local.read_text(encoding="utf-8")))
 
+def _local_overlay_path(cfg_path: Path) -> Path:
+    stem = cfg_path.stem
+    if stem.endswith(".local"):
+        return cfg_path
+    return cfg_path.parent / f"{stem}.local.yaml"
+
+
+def document_to_registry(data: dict) -> ModelRegistry:
+    """Build ModelRegistry from a merged or base config document."""
     defaults = data.get("defaults", {})
     global_vllm = _default_vllm_opts(defaults)
     models: dict[str, ModelSpec] = {}
@@ -111,3 +126,10 @@ def load_registry(path: Path | None = None) -> ModelRegistry:
         raise ValueError(f"Multiple default models: {default_ids}")
 
     return ModelRegistry(models=models)
+
+
+def load_registry(path: Path | None = None) -> ModelRegistry:
+    """Parse config/models.yaml (+ optional models.local.yaml)."""
+    from senserve.catalog_config import load_merged_document
+
+    return document_to_registry(load_merged_document(path))

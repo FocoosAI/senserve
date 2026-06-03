@@ -39,7 +39,7 @@ Spesso **non** significa GPU troppo vecchia: significa che FlashInfer non ha ril
 - `VLLM_USE_FLASHINFER_SAMPLER=0` — campionamento top-k/p senza JIT FlashInfer
 - `FLASHINFER_CUDA_ARCH_LIST=9.0a` — GH200 / Hopper (GPU sm90)
 - `TORCH_CUDA_ARCH_LIST=9.0a`
-- `attention_backend=FLASH_ATTN` in `config/models.toml`
+- `attention_backend=FLASH_ATTN` in `config/models.yaml`
 
 ### DGX Spark (Blackwell, sm12x)
 

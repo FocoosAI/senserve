@@ -19,13 +19,13 @@ uv run senserve --no-load          # API only, no model in VRAM
 uv run senserve --load gemma-4-26b-a4b-it
 ```
 
-Config: `config/models.toml` (optional `config/models.local.toml`).
+Config: `config/models.yaml` (optional `config/models.local.yaml`). Edit via dashboard **Configuration** section or API `GET/PUT /v1/admin/config`. Startup loads a model only when one entry has `default: true` (or use `--load` / `--no-load`).
 
 ## Dashboard
 
-Operational UI (model status, worker pool, load/switch): **http://localhost:8787/ui/**
+Operational UI (model status, worker pool, load/switch, catalog editor): **http://localhost:8787/ui/**
 
-Bind Senserve to localhost only in untrusted networks; admin endpoints have no auth.
+Bind Senserve to localhost only in untrusted networks; admin endpoints (including config save) have no auth.
 
 ## API
 
@@ -34,10 +34,13 @@ Bind Senserve to localhost only in untrusted networks; admin endpoints have no a
 - `POST /v1/chat/completions`
 - `POST /v1/admin/models/load` — `{"model_id": "..."}`
 - `GET /v1/admin/models/status`
+- `GET /v1/admin/config` — catalog YAML as JSON (base file)
+- `PUT /v1/admin/config` — save catalog (blocked while switching or if active model would change)
+- `GET /v1/admin/vllm/flags` — vLLM `serve` CLI flags for UI autocomplete
 
 During model switch: **503** + `Retry-After` (default 30s, `SENSERVE_SWITCH_RETRY_AFTER_S`).
 
-Chat bodies are forwarded to vLLM as-is by default (`SENSERVE_INLINE_REMOTE_MEDIA=0`). Optional `SENSERVE_INLINE_REMOTE_MEDIA=1` fetches HTTP(S) `video_url` into base64 data URLs. Set `allowed_local_media_path` in `config/models.toml` and mount media into the container (see compose `./datasets:/datasets`).
+Chat bodies are forwarded to vLLM as-is by default (`SENSERVE_INLINE_REMOTE_MEDIA=0`). Optional `SENSERVE_INLINE_REMOTE_MEDIA=1` fetches HTTP(S) `video_url` into base64 data URLs. Set `allowed_local_media_path` in `config/models.yaml` and mount media into the container (see compose `./datasets:/datasets`).
 
 Model switching from Open WebUI is automatic: Senserve sleeps the active vLLM worker and wakes the target (no manual `/sleep` calls). Set `SENSERVE_SLEEP_MODE=off` to fall back to kill+restart.
 

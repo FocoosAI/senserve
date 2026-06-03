@@ -33,7 +33,7 @@ services:
     volumes:
       - ~/.cache/huggingface:/root/.cache/huggingface
       - ~/.cache/vllm:/root/.cache/vllm
-      - ./config:/app/config:ro
+      - ./config:/app/config
       - ./datasets:/datasets:ro
     deploy:
       resources:
@@ -42,7 +42,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    # Default: load Qwen3.5 0.8B (id qwen3.5-0.8b in config/models.toml)
+    # Default: load Qwen3.5 0.8B (id qwen3.5-0.8b in config/models.yaml)
     command: ["uv", "run", "senserve"]
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:8787/health"]

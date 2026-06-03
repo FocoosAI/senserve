@@ -10,9 +10,9 @@ from senserve.engine import EngineSupervisor, WorkerState
 
 
 @pytest.fixture
-def sleep_settings(models_toml, monkeypatch):
+def sleep_settings(models_config, monkeypatch):
     monkeypatch.setenv("SENSERVE_SLEEP_MODE", "level2")
-    monkeypatch.setenv("SENSERVE_MODELS_PATH", str(models_toml))
+    monkeypatch.setenv("SENSERVE_MODELS_PATH", str(models_config))
     from senserve.settings import get_settings
 
     get_settings.cache_clear()
@@ -21,10 +21,10 @@ def sleep_settings(models_toml, monkeypatch):
 
 
 @pytest.fixture
-def registry(models_toml):
+def registry(models_config):
     from senserve.registry import load_registry
 
-    return load_registry(models_toml)
+    return load_registry(models_config)
 
 
 def test_vllm_cmd_includes_sleep_flag(registry, sleep_settings):

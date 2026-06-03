@@ -12,20 +12,20 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 @pytest.fixture
-def models_toml(tmp_path: Path) -> Path:
-    path = tmp_path / "models.toml"
+def models_config(tmp_path: Path) -> Path:
+    path = tmp_path / "models.yaml"
     path.write_text(
-        (FIXTURES / "models.toml").read_text(encoding="utf-8"),
+        (FIXTURES / "models.yaml").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
     return path
 
 
 @pytest.fixture
-def registry(models_toml):
+def registry(models_config):
     from senserve.registry import load_registry
 
-    return load_registry(models_toml)
+    return load_registry(models_config)
 
 
 @pytest.fixture

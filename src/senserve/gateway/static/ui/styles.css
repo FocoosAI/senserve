@@ -113,6 +113,69 @@ h2 {
   color: var(--text);
 }
 
+.model-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.65rem;
+  margin-bottom: 1.25rem;
+  padding: 0.75rem 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.control-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.model-picker {
+  font: inherit;
+  font-size: 0.9rem;
+  min-width: min(280px, 100%);
+  flex: 1 1 200px;
+  padding: 0.4rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+button.btn {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+button.btn:hover:not(:disabled) {
+  background: rgba(61, 139, 253, 0.15);
+}
+
+button.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.btn-warmup {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+button.btn-warmup:hover:not(:disabled) {
+  background: rgba(61, 214, 140, 0.12);
+}
+
+.warmup-latency {
+  font-size: 0.85rem;
+  min-width: 4rem;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -174,27 +237,180 @@ th {
   color: #9ec5ff;
 }
 
-button.load-btn {
-  font: inherit;
-  font-size: 0.8rem;
-  padding: 0.35rem 0.65rem;
-  border-radius: 6px;
-  border: 1px solid var(--accent);
-  background: transparent;
-  color: var(--accent);
-  cursor: pointer;
-}
-
-button.load-btn:hover:not(:disabled) {
-  background: rgba(61, 139, 253, 0.15);
-}
-
-button.load-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 .state-idle { color: var(--muted); }
 .state-ready { color: var(--ok); }
 .state-switching { color: var(--warn); }
 .state-error { color: var(--err); }
+
+.banner-ok {
+  background: rgba(61, 214, 140, 0.12);
+  border-color: var(--ok);
+}
+
+.config-editor {
+  margin-bottom: 1.5rem;
+  padding: 0.85rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.config-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.config-header h2 {
+  margin: 0;
+}
+
+.config-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.config-path {
+  margin: 0 0 0.75rem;
+}
+
+.config-subhead {
+  margin: 1rem 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+.config-subhead-sm {
+  margin: 0.75rem 0 0.35rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.defaults-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.5rem 0.75rem;
+}
+
+.default-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.default-field input[type="text"],
+.default-field input[type="number"] {
+  font: inherit;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.kv-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.kv-row {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.kv-row input {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.kv-key {
+  flex: 1 1 180px;
+}
+
+.kv-val {
+  flex: 2 1 240px;
+}
+
+button.btn-sm {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.45rem;
+}
+
+button.btn-primary {
+  background: rgba(61, 139, 253, 0.25);
+}
+
+button.btn-danger {
+  border-color: var(--err);
+  color: var(--err);
+}
+
+.actions-cell {
+  white-space: nowrap;
+}
+
+.actions-cell .btn {
+  margin-right: 0.25rem;
+}
+
+.runtime-table {
+  margin-top: 1rem;
+}
+
+.model-dialog {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  background: var(--surface);
+  color: var(--text);
+  max-width: 520px;
+  width: 92vw;
+}
+
+.model-dialog label {
+  display: block;
+  margin: 0.5rem 0;
+  font-size: 0.85rem;
+}
+
+.model-dialog input[type="text"] {
+  width: 100%;
+  font: inherit;
+  margin-top: 0.2rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.capabilities-fieldset {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+}
+
+.capabilities-fieldset label {
+  display: inline-block;
+  margin-right: 0.75rem;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}

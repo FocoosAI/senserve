@@ -21,8 +21,7 @@ class Settings(BaseSettings):
         default=8000,
         validation_alias=AliasChoices("worker_base_port", "worker_port"),
     )
-    models_path: Path = Field(default=_REPO_ROOT / "config" / "models.toml")
-    default_model_id: str = "qwen3.5-0.8b"
+    models_path: Path = Field(default=_REPO_ROOT / "config" / "models.yaml")
     max_upload_bytes: int = 300 * 1024 * 1024
     # When false, chat bodies are forwarded to vLLM unchanged (besides capability checks).
     inline_remote_media: bool = False

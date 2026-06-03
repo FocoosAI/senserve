@@ -1,7 +1,7 @@
 ---
 id: ADR-0002-vllm-worker-no-ray
 title: vLLM worker subprocess without Ray
-description: Replace Ray with local vllm serve subprocesses (one active in VRAM; lazy pool and sleep/wake per ADR-0003). FastAPI gateway on 8787 proxies OpenAI traffic after preprocessing.
+description: Replace Ray with local vllm serve subprocesses (one active in VRAM; lazy pool and sleep/wake per ADR-0003). FastAPI gateway on 8787 proxies OpenAI chat with optional capability checks and HTTP video inlining.
 status: accepted
 type: adr
 domain: senserve
@@ -27,10 +27,10 @@ Ray added operational weight and Docker friction. vLLM already ships an OpenAI-c
 
 ## Decision
 
-- **Gateway** (`senserve.gateway`): FastAPI on port 8787, unchanged API surface.
-- **Engine** (`senserve.engine.EngineSupervisor`): spawns `vllm serve` on `SENSERVE_WORKER_PORT` (default 8000).
-- **A1**: one active worker; load stops the previous process. Policy hooks reserved for concurrent/LRU later.
-- **Registry**: `config/models.toml` (+ optional `models.local.toml`).
+- **Gateway** (`senserve.gateway`): FastAPI on port 8787, unchanged OpenAI API surface.
+- **Engine** (`senserve.engine.EngineSupervisor`): spawns `vllm serve` per catalog model (see ADR-0003 for sleep pool and port layout).
+- **A1**: one active model in VRAM at a time; switch sleeps or stops the prior worker. Policy hooks reserved for concurrent/LRU later.
+- **Registry**: `config/models.yaml` (+ optional `models.local.yaml`).
 
 ## Consequences
 

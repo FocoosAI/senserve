@@ -1,5 +1,0 @@
-# Copy to models.local.toml (gitignored) for machine-specific overrides.
-
-[[models]]
-id = "qwen3-vl-4b-awq"
-source = "/path/to/local/checkout"

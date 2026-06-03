@@ -341,3 +341,28 @@ class EngineSupervisor:
     def active_model_id(self) -> str | None:
         with self._lock:
             return self._active_id
+
+    def reload_registry(self) -> None:
+        """Reload catalog from disk; unload if active model removed or disabled."""
+        with self._lock:
+            if self._state == EngineState.SWITCHING:
+                raise SwitchingError("Model switch in progress")
+            active = self._active_id
+            new_reg = load_registry()
+            self._registry = new_reg
+            self._port_index = self._build_port_index()
+            for mid in list(self._workers):
+                if mid not in new_reg.models:
+                    self._kill_worker(mid)
+                    del self._workers[mid]
+            if active:
+                try:
+                    spec = new_reg.get(active)
+                except KeyError:
+                    spec = None
+                if spec is None or not spec.enabled:
+                    self._kill_worker(active)
+                    self._active_id = None
+                    if self._state == EngineState.READY:
+                        self._state = EngineState.IDLE
+                        self._message = "Active model removed from catalog"

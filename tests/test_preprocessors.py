@@ -6,8 +6,8 @@ from senserve.settings import get_settings
 
 
 @pytest.fixture
-def registry(models_toml):
-    return load_registry(models_toml)
+def registry(models_config):
+    return load_registry(models_config)
 
 
 def test_video_rejected_for_gemma(registry):

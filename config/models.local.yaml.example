@@ -1,0 +1,5 @@
+# Copy to models.local.yaml (gitignored) for machine-specific overrides.
+
+models:
+  - id: qwen3-vl-4b-awq
+    source: /path/to/local/checkout

@@ -3,7 +3,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 data/
-config/models.local.toml
+config/models.local.yaml
 *.egg-info/
 dist/
 build/
