@@ -29,7 +29,7 @@ related:
 
 - **Causes**: vLLM subprocess exited during startup (CUDA/NVML, OOM); prior behavior waited up to `worker_ready_timeout_s` (~600s) on HTTP poll only.
 - **Mitigation**: use **Cancel switch** in the dashboard or `POST /v1/admin/models/cancel` to kill the target worker and restore the previous active model; check `docker compose logs senserve` and `nvidia-smi` inside the container; restart the service if the GPU driver is wedged.
-- **Prevention**: engine now fails fast when the worker process exits before ready; failed switches roll back to the prior active model when possible.
+- **Prevention**: engine fails fast when the worker is dead **and** HTTP `/v1/models` is unreachable; if the vLLM launcher parent exits but APIServer still serves the port, the switch continues (avoids false "exited before ready" on large models).
 
 ## Symptoms: worker never becomes ready
 

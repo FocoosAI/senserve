@@ -113,12 +113,30 @@ def _vllm_cmd(spec: ModelSpec, port: int, defaults: dict, *, sleep_enabled: bool
     return cmd
 
 
-def _check_process_alive(process: subprocess.Popen[bytes] | None, model_id: str) -> None:
+def _worker_http_alive(base_url: str) -> bool:
+    """True when the worker already serves OpenAI /v1/models (launcher may have exited)."""
+    try:
+        r = httpx.get(f"{base_url.rstrip('/')}/models", timeout=3.0)
+        return r.status_code == 200
+    except Exception:  # noqa: BLE001 — probe only
+        return False
+
+
+def _check_process_alive(
+    process: subprocess.Popen[bytes] | None,
+    model_id: str,
+    *,
+    base_url: str | None = None,
+) -> None:
     if process is None:
         return
     code = process.poll()
-    if code is not None:
-        raise WorkerExitError(model_id, code)
+    if code is None:
+        return
+    # vLLM often exits the Popen parent after forking APIServer; HTTP is the source of truth.
+    if base_url and _worker_http_alive(base_url):
+        return
+    raise WorkerExitError(model_id, code)
 
 
 def _wait_ready(
@@ -132,7 +150,7 @@ def _wait_ready(
     url = f"{base_url.rstrip('/')}/models"
     last_err: Exception | None = None
     while time.monotonic() < deadline:
-        _check_process_alive(process, model_id)
+        _check_process_alive(process, model_id, base_url=base_url)
         try:
             r = httpx.get(url, timeout=5.0)
             if r.status_code == 200:
@@ -472,7 +490,6 @@ class EngineSupervisor:
             env["VLLM_SERVER_DEV_MODE"] = "1"
         logger.info("Starting vLLM: %s", " ".join(cmd))
         proc = subprocess.Popen(cmd, env=env)  # noqa: S603
-        _check_process_alive(proc, spec.id)
         return proc
 
     def _kill_worker(self, model_id: str | None) -> None:

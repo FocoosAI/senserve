@@ -42,13 +42,23 @@ def test_check_process_alive_raises_on_exit():
     assert exc_info.value.exit_code == 1
 
 
+def test_check_process_alive_ignores_exit_when_http_up():
+    proc = MagicMock(spec=subprocess.Popen)
+    proc.poll.return_value = 1
+    with patch("senserve.engine._worker_http_alive", return_value=True):
+        _check_process_alive(proc, "m1", base_url="http://127.0.0.1:8001")
+
+
 def test_wait_ready_fails_fast_when_process_exits():
     proc = MagicMock(spec=subprocess.Popen)
     proc.poll.return_value = 137
-    with patch("senserve.engine.httpx.get") as get_mock:
+
+    def fake_get(url, **kwargs):
+        raise OSError("connection refused")
+
+    with patch("senserve.engine.httpx.get", side_effect=fake_get):
         with pytest.raises(WorkerExitError):
             _wait_ready("http://127.0.0.1:8000", timeout_s=30.0, process=proc, model_id="m1")
-    get_mock.assert_not_called()
 
 
 def test_begin_load_starting_without_prior_active():
