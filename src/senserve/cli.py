@@ -8,6 +8,7 @@ import sys
 
 import uvicorn
 
+from senserve import vllm_flags
 from senserve.engine import EngineSupervisor
 from senserve.gateway.app import create_app
 from senserve.settings import get_settings
@@ -29,6 +30,16 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
     settings = get_settings()
+
+    logging.info("Preloading vLLM serve --help flags…")
+    try:
+        vllm_flags.preload_at_startup()
+    except Exception:
+        logging.warning(
+            "vLLM flags preload failed; config autocomplete may be unavailable until refresh",
+            exc_info=True,
+        )
+
     supervisor = EngineSupervisor()
 
     if not args.no_load:
@@ -41,7 +52,7 @@ def main() -> None:
                 model_id = default.id
         if model_id:
             try:
-                supervisor.load_blocking(model_id)
+                supervisor.load(model_id)
             except Exception:
                 logging.exception("Startup model load failed")
                 sys.exit(1)

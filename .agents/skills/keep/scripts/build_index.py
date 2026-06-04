@@ -14,8 +14,8 @@ derived from each file's `related:` block.
 
 Run:
     python -m scripts.build_index <path-to-knowledge-root>
-    # or, from inside the repo:
-    python skills/KEEP/scripts/build_index.py knowledge/
+    # or, by absolute/relative path to wherever the skill is installed:
+    python <skill-path>/scripts/build_index.py knowledge/
 
 Exits 0 on success, 1 if any file has invalid or missing required frontmatter.
 """

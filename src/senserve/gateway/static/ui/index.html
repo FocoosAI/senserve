@@ -10,81 +10,83 @@
   <header class="header">
     <div>
       <h1>Senserve</h1>
-      <p class="subtitle">Operations dashboard</p>
+      <p id="status-line" class="status-line" aria-live="polite">Loading…</p>
     </div>
     <p id="last-refresh" class="muted">—</p>
   </header>
 
-  <section id="banner-switch" class="banner hidden" role="status"></section>
+  <section id="banner-switch" class="banner banner-switch hidden" role="status">
+    <span id="banner-switch-text"></span>
+    <button type="button" id="model-cancel-btn" class="btn btn-cancel hidden">Cancel</button>
+  </section>
   <section id="banner-error" class="banner banner-error hidden" role="alert"></section>
   <section id="banner-config-ok" class="banner banner-ok hidden" role="status"></section>
 
-  <section class="cards" id="status-cards" aria-label="System status"></section>
-
-  <section class="summary" id="summary" aria-label="Summary"></section>
-
-  <section class="model-controls" aria-label="Model selection">
+  <section class="ops-panel" aria-label="Model control">
     <label class="control-label" for="model-picker">Model</label>
     <select id="model-picker" class="model-picker"></select>
-    <button type="button" id="model-load-btn" class="btn">Load</button>
-    <button type="button" id="model-warmup-btn" class="btn btn-warmup" title="Simple chat completion to wake the active model">
+    <button type="button" id="model-load-btn" class="btn btn-primary">Switch</button>
+    <button type="button" id="model-warmup-btn" class="btn btn-warmup" title="Short chat completion on the active model">
       Warmup
     </button>
+    <span id="model-selection-status" class="selection-status muted" aria-live="polite"></span>
     <span id="warmup-latency" class="warmup-latency muted" aria-live="polite"></span>
   </section>
 
-  <section class="config-editor" aria-label="Catalog configuration">
-    <div class="config-header">
-      <h2>Configuration</h2>
-      <div class="config-actions">
-        <button type="button" id="config-add-model-btn" class="btn">Add model</button>
-        <button type="button" id="config-save-btn" class="btn btn-primary">Save configuration</button>
-      </div>
-    </div>
-    <p id="config-path" class="muted config-path"></p>
-
-    <h3 class="config-subhead">Global defaults</h3>
-    <div class="defaults-grid" id="defaults-form"></div>
-    <h4 class="config-subhead-sm">vLLM options (defaults)</h4>
-    <div id="defaults-vllm-rows" class="kv-rows"></div>
-    <button type="button" id="defaults-vllm-add" class="btn btn-sm">Add option</button>
-
-    <h3 class="config-subhead">Catalog models</h3>
+  <section class="runtime-section" aria-label="Runtime">
+    <h2 class="section-title">Workers</h2>
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Status</th>
-            <th>Active</th>
-            <th>Capabilities</th>
-            <th>Source</th>
-            <th>Actions</th>
+            <th>Model</th>
+            <th>State</th>
+            <th>Port</th>
+            <th>PID</th>
+            <th>Sleep</th>
           </tr>
         </thead>
-        <tbody id="config-models-body"></tbody>
+        <tbody id="models-body"></tbody>
       </table>
     </div>
   </section>
 
-  <section class="table-wrap runtime-table">
-    <h2>Runtime</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Status</th>
-          <th>Active</th>
-          <th>Capabilities</th>
-          <th>Port</th>
-          <th>PID</th>
-          <th>Sleep</th>
-          <th>Source</th>
-        </tr>
-      </thead>
-      <tbody id="models-body"></tbody>
-    </table>
-  </section>
+  <details id="config-panel" class="config-panel">
+    <summary>Configuration <span id="config-panel-hint" class="muted">(catalog YAML)</span></summary>
+    <div class="config-panel-body">
+      <p id="config-load-hint" class="muted">Open to load editor…</p>
+      <div id="config-editor-root" class="hidden">
+        <div class="config-header">
+          <p id="config-path" class="muted config-path"></p>
+          <div class="config-actions">
+            <button type="button" id="config-add-model-btn" class="btn">Add model</button>
+            <button type="button" id="config-save-btn" class="btn btn-primary">Save</button>
+          </div>
+        </div>
+
+        <h3 class="config-subhead">Global defaults</h3>
+        <div class="defaults-grid" id="defaults-form"></div>
+        <h4 class="config-subhead-sm">vLLM options (defaults)</h4>
+        <div id="defaults-vllm-rows" class="kv-rows"></div>
+        <button type="button" id="defaults-vllm-add" class="btn btn-sm">Add option</button>
+
+        <h3 class="config-subhead">Catalog</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Capabilities</th>
+                <th>Source</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="config-models-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </details>
 
   <dialog id="model-dialog" class="model-dialog">
     <form id="model-form" method="dialog">

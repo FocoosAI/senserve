@@ -21,9 +21,13 @@ logger = logging.getLogger(__name__)
 
 class EngineState(str, Enum):
     IDLE = "idle"
-    SWITCHING = "switching"
+    STARTING = "starting"  # first model load (no prior active worker)
+    SWITCHING = "switching"  # change active model
     READY = "ready"
     ERROR = "error"
+
+
+_LOADING_STATES = frozenset({EngineState.STARTING, EngineState.SWITCHING})
 
 
 class WorkerState(str, Enum):
@@ -58,6 +62,16 @@ class SwitchingError(Exception):
 
 class NotReadyError(Exception):
     """No model is loaded and ready."""
+
+
+class WorkerExitError(RuntimeError):
+    """vLLM worker subprocess exited before becoming ready."""
+
+    def __init__(self, model_id: str, exit_code: int | None) -> None:
+        self.model_id = model_id
+        self.exit_code = exit_code
+        code = exit_code if exit_code is not None else "unknown"
+        super().__init__(f"vLLM worker for {model_id} exited before ready (code {code})")
 
 
 @dataclass
@@ -99,11 +113,26 @@ def _vllm_cmd(spec: ModelSpec, port: int, defaults: dict, *, sleep_enabled: bool
     return cmd
 
 
-def _wait_ready(base_url: str, timeout_s: float) -> None:
+def _check_process_alive(process: subprocess.Popen[bytes] | None, model_id: str) -> None:
+    if process is None:
+        return
+    code = process.poll()
+    if code is not None:
+        raise WorkerExitError(model_id, code)
+
+
+def _wait_ready(
+    base_url: str,
+    timeout_s: float,
+    *,
+    process: subprocess.Popen[bytes] | None = None,
+    model_id: str = "worker",
+) -> None:
     deadline = time.monotonic() + timeout_s
     url = f"{base_url.rstrip('/')}/models"
     last_err: Exception | None = None
     while time.monotonic() < deadline:
+        _check_process_alive(process, model_id)
         try:
             r = httpx.get(url, timeout=5.0)
             if r.status_code == 200:
@@ -134,6 +163,7 @@ class EngineSupervisor:
         self._target: str | None = None
         self._message = ""
         self._error: str | None = None
+        self._switch_cancel_handled = False
         self._port_index = self._build_port_index()
 
     def _build_port_index(self) -> dict[str, int]:
@@ -184,10 +214,30 @@ class EngineSupervisor:
 
     def reject_if_switching(self) -> None:
         with self._lock:
-            if self._state == EngineState.SWITCHING:
-                raise SwitchingError("Model switch in progress")
+            if self._state in _LOADING_STATES:
+                raise SwitchingError("Model load in progress")
             if self._state != EngineState.READY or not self._active_id:
                 raise NotReadyError("No model loaded")
+
+    def _load_state_for(self, model_id: str) -> EngineState:
+        with self._lock:
+            prior_active = self._active_id
+        if prior_active and prior_active != model_id:
+            return EngineState.SWITCHING
+        return EngineState.STARTING
+
+    def _begin_load(self, model_id: str) -> EngineState:
+        load_state = self._load_state_for(model_id)
+        verb = "Switching to" if load_state == EngineState.SWITCHING else "Starting"
+        with self._lock:
+            if self._state in _LOADING_STATES:
+                raise SwitchingError("Model load already in progress")
+            self._state = load_state
+            self._target = model_id
+            self._message = f"{verb} {model_id}..."
+            self._error = None
+            self._switch_cancel_handled = False
+        return load_state
 
     def backend_base_url(self) -> str:
         self.reject_if_switching()
@@ -202,14 +252,11 @@ class EngineSupervisor:
         if not spec.enabled:
             raise ValueError(f"Model {model_id} is disabled in registry")
         with self._lock:
-            if self._state == EngineState.SWITCHING:
-                raise SwitchingError("Model switch already in progress")
+            if self._state in _LOADING_STATES:
+                raise SwitchingError("Model load already in progress")
             if self._active_id == model_id and self._state == EngineState.READY:
                 return
-            self._state = EngineState.SWITCHING
-            self._target = model_id
-            self._message = f"Switching to {model_id}..."
-            self._error = None
+        self._begin_load(model_id)
         threading.Thread(target=self._load_sync, args=(spec,), daemon=True).start()
 
     def load_blocking(self, model_id: str) -> None:
@@ -217,35 +264,134 @@ class EngineSupervisor:
         if not spec.enabled:
             raise ValueError(f"Model {model_id} is disabled in registry")
         with self._lock:
-            if self._state == EngineState.SWITCHING:
-                raise SwitchingError("Model switch already in progress")
+            if self._state in _LOADING_STATES:
+                raise SwitchingError("Model load already in progress")
             if self._active_id == model_id and self._state == EngineState.READY:
                 return
-            self._state = EngineState.SWITCHING
-            self._target = model_id
-            self._message = f"Switching to {model_id}..."
-            self._error = None
+        self._begin_load(model_id)
         self._load_sync(spec)
 
+    def cancel_switch(self) -> EngineStatus:
+        """Abort an in-progress load/switch; kill target worker and restore prior active if possible."""
+        with self._lock:
+            if self._state not in _LOADING_STATES:
+                return self.status()
+            target_id = self._target
+            rollback_id = self._active_id
+            self._switch_cancel_handled = True
+            self._target = None
+        if target_id:
+            self._kill_worker(target_id)
+            worker = self._workers.get(target_id)
+            if worker:
+                worker.state = WorkerState.COLD
+        msg = "Switch cancelled" if rollback_id else "Start cancelled"
+        self._restore_active_worker(rollback_id, message=msg)
+        with self._lock:
+            self._switch_cancel_handled = False
+            return self.status()
+
     def _load_sync(self, spec: ModelSpec) -> None:
+        rollback_id: str | None
+        with self._lock:
+            rollback_id = self._active_id if self._active_id != spec.id else None
         try:
             if self._settings.sleep_enabled:
                 self._switch_sleep_mode(spec)
             else:
                 self._switch_kill_restart(spec)
             with self._lock:
+                if self._switch_cancel_handled:
+                    return
                 self._active_id = spec.id
                 self._state = EngineState.READY
                 self._target = None
                 self._message = f"Loaded {spec.id}"
+                self._error = None
                 logger.info("Model %s ready on port %s", spec.id, self._port_for(spec.id))
         except Exception as exc:
             logger.exception("Failed to load model %s", spec.id)
             with self._lock:
+                if self._switch_cancel_handled:
+                    return
+            self._handle_failed_switch(spec.id, rollback_id, exc)
+
+    def _handle_failed_switch(
+        self,
+        target_id: str,
+        rollback_id: str | None,
+        exc: Exception,
+    ) -> None:
+        with self._lock:
+            if self._switch_cancel_handled:
+                return
+        self._kill_worker(target_id)
+        worker = self._workers.get(target_id)
+        if worker:
+            worker.state = WorkerState.COLD
+        self._restore_active_worker(
+            rollback_id,
+            message=f"Failed to load {target_id}",
+            error=str(exc),
+        )
+
+    def _restore_active_worker(
+        self,
+        model_id: str | None,
+        *,
+        message: str,
+        error: str | None = None,
+    ) -> None:
+        if not model_id:
+            with self._lock:
+                self._active_id = None
+                self._state = EngineState.IDLE
+                self._target = None
+                self._message = message
+                self._error = error
+            return
+
+        worker = self._workers.get(model_id)
+        if worker is None:
+            with self._lock:
+                self._active_id = model_id
                 self._state = EngineState.ERROR
                 self._target = None
-                self._message = f"Failed to load {spec.id}"
-                self._error = str(exc)
+                self._message = message
+                self._error = error or "Worker not in pool"
+            return
+
+        try:
+            if worker.state == WorkerState.SLEEPING:
+                worker.state = WorkerState.STARTING
+                vllm_sleep.wake_worker(
+                    worker.port,
+                    self._settings.sleep_level,
+                    self._settings.worker_ready_timeout_s,
+                )
+                _wait_ready(
+                    self._settings.worker_base_url(worker.port),
+                    self._settings.worker_ready_timeout_s,
+                    process=worker.process,
+                    model_id=model_id,
+                )
+                worker.state = WorkerState.READY
+            elif worker.state != WorkerState.READY:
+                raise RuntimeError(f"Worker {model_id} in state {worker.state.value}")
+            with self._lock:
+                self._active_id = model_id
+                self._state = EngineState.READY
+                self._target = None
+                self._message = message
+                self._error = error
+        except Exception as restore_exc:
+            logger.exception("Failed to restore model %s after switch error", model_id)
+            with self._lock:
+                self._active_id = model_id
+                self._state = EngineState.ERROR
+                self._target = None
+                self._message = message
+                self._error = error or str(restore_exc)
 
     def _switch_kill_restart(self, spec: ModelSpec) -> None:
         """Legacy path: terminate active worker and spawn a new vLLM on the single port."""
@@ -257,6 +403,8 @@ class EngineSupervisor:
         _wait_ready(
             self._settings.worker_base_url(port),
             self._settings.worker_ready_timeout_s,
+            process=worker.process,
+            model_id=spec.id,
         )
         with self._lock:
             worker.state = WorkerState.READY
@@ -281,6 +429,8 @@ class EngineSupervisor:
             _wait_ready(
                 self._settings.worker_base_url(port),
                 self._settings.worker_ready_timeout_s,
+                process=worker.process,
+                model_id=spec.id,
             )
             worker.state = WorkerState.READY
         elif worker.state in (WorkerState.READY, WorkerState.STARTING):
@@ -306,6 +456,8 @@ class EngineSupervisor:
         _wait_ready(
             self._settings.worker_base_url(worker.port),
             self._settings.worker_ready_timeout_s,
+            process=worker.process,
+            model_id=worker.spec.id,
         )
         worker.state = WorkerState.READY
 
@@ -319,7 +471,9 @@ class EngineSupervisor:
         if self._settings.sleep_enabled:
             env["VLLM_SERVER_DEV_MODE"] = "1"
         logger.info("Starting vLLM: %s", " ".join(cmd))
-        return subprocess.Popen(cmd, env=env)  # noqa: S603
+        proc = subprocess.Popen(cmd, env=env)  # noqa: S603
+        _check_process_alive(proc, spec.id)
+        return proc
 
     def _kill_worker(self, model_id: str | None) -> None:
         if not model_id:
@@ -345,8 +499,8 @@ class EngineSupervisor:
     def reload_registry(self) -> None:
         """Reload catalog from disk; unload if active model removed or disabled."""
         with self._lock:
-            if self._state == EngineState.SWITCHING:
-                raise SwitchingError("Model switch in progress")
+            if self._state in _LOADING_STATES:
+                raise SwitchingError("Model load in progress")
             active = self._active_id
             new_reg = load_registry()
             self._registry = new_reg

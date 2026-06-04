@@ -1,5 +1,5 @@
-const POLL_STABLE_MS = 5000;
-const POLL_SWITCH_MS = 2000;
+const POLL_STABLE_MS = 3000;
+const POLL_SWITCH_MS = 800;
 const SWITCH_UI_TIMEOUT_MS = 10 * 60 * 1000;
 
 const SENSERVE_DEFAULT_KEYS = new Set(["worker_port", "worker_base_port"]);
@@ -17,14 +17,18 @@ const KNOWN_DEFAULT_FIELDS = [
 let pollTimer = null;
 let switching = false;
 let switchStartedAt = null;
+let pendingTargetId = null;
 let controlsWired = false;
 let configWired = false;
+let configLoadPromise = null;
 let lastModels = [];
+let lastAdmin = null;
 let lastHealth = null;
+let lastPickerSignature = "";
+let userPickedModelId = null;
 let configDoc = { defaults: {}, models: [] };
 let vllmFlags = [];
 let modelEditIndex = null;
-let configEditorInitialized = false;
 
 function el(id) {
   return document.getElementById(id);
@@ -59,8 +63,8 @@ function badgeStatus(status) {
 }
 
 function sleepLabel(v) {
-  if (v === true) return "Yes";
-  if (v === false) return "No";
+  if (v === true) return "yes";
+  if (v === false) return "no";
   return "—";
 }
 
@@ -84,13 +88,24 @@ async function fetchJson(path, options) {
 
 function schedulePoll(ms) {
   if (pollTimer) clearTimeout(pollTimer);
-  pollTimer = setTimeout(() => refresh().catch(onFetchError), ms);
+  pollTimer = setTimeout(() => refreshRuntime().catch(onFetchError), ms);
+}
+
+function isEngineLoading(admin) {
+  const s = admin?.state;
+  return s === "switching" || s === "starting" || switching || pendingTargetId;
+}
+
+function pollInterval(admin, health) {
+  if (isEngineLoading(admin) || !health?.ready) return POLL_SWITCH_MS;
+  return POLL_STABLE_MS;
 }
 
 function onFetchError(err) {
   console.error(err);
   el("banner-error").textContent = `Network error: ${err.message}`;
   el("banner-error").classList.remove("hidden");
+  el("status-line").textContent = "Unreachable";
   schedulePoll(POLL_STABLE_MS);
 }
 
@@ -133,8 +148,7 @@ function renderKvRows(containerId, entries, onChange) {
   container.querySelectorAll(".kv-remove").forEach((btn) => {
     btn.addEventListener("click", () => {
       const idx = Number(btn.getAttribute("data-idx"));
-      const next = entries.filter((_, j) => j !== idx);
-      onChange(next);
+      onChange(entries.filter((_, j) => j !== idx));
     });
   });
   container.querySelectorAll(".kv-key, .kv-val").forEach((input) => {
@@ -143,11 +157,13 @@ function renderKvRows(containerId, entries, onChange) {
 }
 
 function readKvRows(container) {
-  return [...container.querySelectorAll(".kv-row")].map((row) => {
-    const key = row.querySelector(".kv-key")?.value.trim();
-    const val = row.querySelector(".kv-val")?.value.trim();
-    return [key, val];
-  }).filter(([k]) => k);
+  return [...container.querySelectorAll(".kv-row")]
+    .map((row) => {
+      const key = row.querySelector(".kv-key")?.value.trim();
+      const val = row.querySelector(".kv-val")?.value.trim();
+      return [key, val];
+    })
+    .filter(([k]) => k);
 }
 
 function renderDefaultsVllm() {
@@ -208,18 +224,15 @@ function renderDefaultsForm() {
   renderDefaultsVllm();
 }
 
-function renderConfigModelsTable(runtimeModels) {
+function renderConfigModelsTable() {
   const tbody = el("config-models-body");
   tbody.innerHTML = configDoc.models
     .map((m, i) => {
-      const rt = runtimeModels.find((r) => r.id === m.id);
       const caps = (m.capabilities || [])
         .map((c) => `<span class="badge badge-cap">${esc(c)}</span>`)
         .join("");
       return `<tr>
         <td>${esc(m.display_name || m.id)}</td>
-        <td>${rt ? badgeStatus(rt.status) : '<span class="badge">—</span>'}</td>
-        <td>${rt?.loaded ? '<span class="badge badge-ok">yes</span>' : '<span class="badge">no</span>'}</td>
         <td>${caps || "—"}</td>
         <td class="source-cell" title="${esc(m.source)}">${esc(m.source)}</td>
         <td class="actions-cell">
@@ -234,9 +247,8 @@ function renderConfigModelsTable(runtimeModels) {
   });
   tbody.querySelectorAll("[data-del]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const idx = Number(btn.getAttribute("data-del"));
-      configDoc.models.splice(idx, 1);
-      renderConfigModelsTable(runtimeModels);
+      configDoc.models.splice(Number(btn.getAttribute("data-del")), 1);
+      renderConfigModelsTable();
     });
   });
 }
@@ -246,10 +258,7 @@ function readModelVllmRows() {
 }
 
 function renderModelVllmRows(vllm) {
-  const entries = Object.entries(vllm || {});
-  renderKvRows("model-vllm-rows", entries, (next) => {
-    /* updated on submit */
-  });
+  renderKvRows("model-vllm-rows", Object.entries(vllm || {}), () => {});
 }
 
 function openModelDialog(index) {
@@ -290,6 +299,10 @@ function wireConfigEditor() {
   if (configWired) return;
   configWired = true;
 
+  el("config-panel").addEventListener("toggle", () => {
+    if (el("config-panel").open) ensureConfigLoaded().catch(onFetchError);
+  });
+
   el("defaults-vllm-add").addEventListener("click", () => {
     const entries = defaultsVllmEntries();
     entries.push(["", ""]);
@@ -300,8 +313,7 @@ function wireConfigEditor() {
   el("config-add-model-btn").addEventListener("click", () => openModelDialog(null));
 
   el("model-vllm-add").addEventListener("click", () => {
-    const container = el("model-vllm-rows");
-    const entries = readKvRows(container);
+    const entries = readKvRows(el("model-vllm-rows"));
     entries.push(["", ""]);
     renderKvRows("model-vllm-rows", entries, () => {});
   });
@@ -341,10 +353,53 @@ function wireConfigEditor() {
       configDoc.models[modelEditIndex] = entry;
     }
     el("model-dialog").close();
-    renderConfigModelsTable(lastModels);
+    renderConfigModelsTable();
   });
 
   el("config-save-btn").addEventListener("click", () => saveConfig());
+}
+
+async function ensureConfigLoaded() {
+  if (configLoadPromise) return configLoadPromise;
+  el("config-load-hint").textContent = "Loading configuration…";
+  configLoadPromise = loadConfigEditor()
+    .then(() => {
+      el("config-load-hint").classList.add("hidden");
+      el("config-editor-root").classList.remove("hidden");
+      renderConfigModelsTable();
+    })
+    .finally(() => {
+      configLoadPromise = null;
+    });
+  return configLoadPromise;
+}
+
+async function loadConfigEditor() {
+  const [cfgRes, flagsRes] = await Promise.all([
+    fetchJson("/v1/admin/config"),
+    fetchJson("/v1/admin/vllm/flags"),
+  ]);
+  if (cfgRes.ok && cfgRes.body) {
+    configDoc = {
+      defaults: cfgRes.body.defaults || {},
+      models: (cfgRes.body.models || []).map((m) => ({
+        ...m,
+        vllm: m.vllm || {},
+      })),
+    };
+    let pathNote = cfgRes.body.path || "";
+    if (cfgRes.body.local_overlay) {
+      pathNote += " · local overlay is read-only";
+    }
+    el("config-path").textContent = pathNote;
+  }
+  if (flagsRes.ok && flagsRes.body?.flags) {
+    vllmFlags = flagsRes.body.flags;
+    el("vllm-flag-list").innerHTML = vllmFlags
+      .map((f) => `<option value="${esc(f.yaml_name)}">${esc(f.cli_name)}</option>`)
+      .join("");
+  }
+  renderDefaultsForm();
 }
 
 async function saveConfig() {
@@ -374,8 +429,7 @@ async function saveConfig() {
   if (status === 200) {
     el("banner-config-ok").textContent = "Configuration saved";
     el("banner-config-ok").classList.remove("hidden");
-    configEditorInitialized = false;
-    await refresh();
+    await refreshRuntime();
     return;
   }
 
@@ -399,98 +453,66 @@ function readDefaultsFromForm() {
   });
 }
 
-function updateVllmDatalist() {
-  const dl = el("vllm-flag-list");
-  dl.innerHTML = vllmFlags.map((f) => `<option value="${esc(f.yaml_name)}">${esc(f.cli_name)}</option>`).join("");
-}
-
-async function loadConfigEditor() {
-  const [cfgRes, flagsRes] = await Promise.all([
-    fetchJson("/v1/admin/config"),
-    fetchJson("/v1/admin/vllm/flags"),
-  ]);
-  if (cfgRes.ok && cfgRes.body) {
-    configDoc = {
-      defaults: cfgRes.body.defaults || {},
-      models: (cfgRes.body.models || []).map((m) => ({
-        ...m,
-        vllm: m.vllm || {},
-      })),
-    };
-    el("config-path").textContent = cfgRes.body.path || "";
-    if (cfgRes.body.local_overlay) {
-      el("config-path").textContent += " (local overlay present; not edited by Save)";
-    }
-  }
-  if (flagsRes.ok && flagsRes.body?.flags) {
-    vllmFlags = flagsRes.body.flags;
-    updateVllmDatalist();
-  }
-  renderDefaultsForm();
-}
-
 function wireControls() {
   if (controlsWired) return;
   controlsWired = true;
+
+  el("model-picker").addEventListener("change", () => {
+    userPickedModelId = el("model-picker").value;
+    updateLoadButtonState();
+    updateSelectionStatus();
+  });
+
   el("model-load-btn").addEventListener("click", () => {
     const id = el("model-picker").value;
     if (id) loadModel(id);
   });
   el("model-warmup-btn").addEventListener("click", () => runWarmup());
+  el("model-cancel-btn").addEventListener("click", () => cancelSwitch());
 }
 
-function renderCards(health, admin, models) {
+function renderStatusLine(health, admin, models) {
   const engine = admin.state || health.engine;
   const activeId = health.active_model || admin.active_model_id;
-  const cards = [
-    { label: "Engine", value: engine, cls: stateClass(engine) },
-    { label: "Ready", value: health.ready ? "Yes" : "No" },
-    { label: "Active model", value: displayName(models, activeId) },
-    { label: "Gateway", value: health.gateway || "ok" },
-  ];
-  el("status-cards").innerHTML = cards
-    .map(
-      (c) =>
-        `<div class="card"><div class="card-label">${esc(c.label)}</div>` +
-        `<div class="card-value ${c.cls || ""}">${esc(c.value)}</div></div>`
-    )
-    .join("");
-}
-
-function renderSummary(models, workers, admin) {
-  const byWorkerState = {};
-  for (const w of workers || []) {
-    byWorkerState[w.state] = (byWorkerState[w.state] || 0) + 1;
+  const activeName = displayName(models, activeId);
+  const ready = health.ready ? "ready" : "not ready";
+  let line = `<span class="${stateClass(engine)}">${esc(engine)}</span>`;
+  line += ` · ${esc(ready)}`;
+  if (activeId && engine === "ready") {
+    line += ` · active: <strong>${esc(activeName)}</strong>`;
+  } else if (admin.state === "starting" || admin.state === "switching") {
+    const target = displayName(models, admin.target_model_id || pendingTargetId);
+    const verb = admin.state === "starting" ? "starting" : "switching to";
+    line += ` · ${verb} <strong>${esc(target)}</strong>`;
   }
-  const warm = models.filter((m) => m.status !== "cold").length;
-  const parts = [
-    `Catalog: <strong>${models.length}</strong>`,
-    `Workers in pool: <strong>${(workers || []).length}</strong>`,
-    `Non-cold (catalog): <strong>${warm}</strong>`,
-  ];
-  for (const [st, n] of Object.entries(byWorkerState).sort()) {
-    parts.push(`${esc(st)}: <strong>${n}</strong>`);
-  }
-  if (admin.message) {
-    parts.push(`Message: <strong>${esc(admin.message)}</strong>`);
-  }
-  el("summary").innerHTML = parts.join(" · ");
+  el("status-line").innerHTML = line;
 }
 
 function renderSwitchBanner(admin) {
   const banner = el("banner-switch");
-  if (admin.state === "switching") {
+  const textEl = el("banner-switch-text");
+  const cancelBtn = el("model-cancel-btn");
+  const loading = isEngineLoading(admin);
+
+  if (loading) {
     banner.classList.remove("hidden");
-    const target = displayName(lastModels, admin.target_model_id);
-    banner.textContent = `Switch in progress → ${target || admin.target_model_id || "?"}${
-      admin.message ? ` — ${admin.message}` : ""
-    }`;
-    switching = true;
+    cancelBtn.classList.remove("hidden");
+    const targetId = admin.target_model_id || pendingTargetId;
+    const target = displayName(lastModels, targetId);
+    textEl.textContent =
+      admin.message ||
+      (admin.state === "starting"
+        ? `Starting vLLM: ${target || targetId || "model"}…`
+        : `Switching to ${target || targetId || "model"}…`);
+    switching = admin.state === "switching" || admin.state === "starting";
     if (!switchStartedAt) switchStartedAt = Date.now();
   } else {
     banner.classList.add("hidden");
+    cancelBtn.classList.add("hidden");
+    textEl.textContent = "";
     switching = false;
     switchStartedAt = null;
+    pendingTargetId = null;
   }
 }
 
@@ -505,51 +527,106 @@ function renderErrorBanner(admin) {
   }
 }
 
+function pickerSignature(models, admin) {
+  return `${admin.state}|${admin.active_model_id}|${admin.target_model_id}|${models
+    .map((m) => `${m.id}:${m.status}:${m.loaded}`)
+    .join(",")}`;
+}
+
 function renderModelPicker(models, admin, health) {
   const sel = el("model-picker");
   const activeId = health.active_model || admin.active_model_id;
-  const globalSwitch = admin.state === "switching";
-  const prev = sel.value;
+  const sig = pickerSignature(models, admin);
 
-  sel.innerHTML = models
-    .map((m) => {
-      const label = m.name || m.id;
-      const suffix = m.loaded ? " · active" : ` · ${m.status || "cold"}`;
-      return `<option value="${esc(m.id)}">${esc(label + suffix)}</option>`;
-    })
-    .join("");
+  if (sig !== lastPickerSignature) {
+    lastPickerSignature = sig;
+    const prev = userPickedModelId || sel.value;
+    sel.innerHTML = models
+      .map((m) => {
+        const label = m.name || m.id;
+        return `<option value="${esc(m.id)}">${esc(label)}</option>`;
+      })
+      .join("");
 
-  if (prev && models.some((m) => m.id === prev)) {
-    sel.value = prev;
-  } else if (activeId && models.some((m) => m.id === activeId)) {
-    sel.value = activeId;
+    if (prev && models.some((m) => m.id === prev)) {
+      sel.value = prev;
+    } else if (activeId && models.some((m) => m.id === activeId)) {
+      sel.value = activeId;
+      userPickedModelId = activeId;
+    }
   }
 
-  const selected = models.find((m) => m.id === sel.value);
-  const selectedLoaded = selected?.loaded && health.ready;
-  el("model-load-btn").disabled =
-    !selected || globalSwitch || selected.status === "starting" || selectedLoaded;
-
-  el("model-warmup-btn").disabled = !health.ready || !activeId || globalSwitch;
+  updateLoadButtonState();
+  updateSelectionStatus();
 }
 
-function renderTable(models, workers, admin, health) {
+function updateSelectionStatus() {
+  const statusEl = el("model-selection-status");
+  const id = el("model-picker").value;
+  const m = lastModels.find((x) => x.id === id);
+  if (!m) {
+    statusEl.textContent = "";
+    return;
+  }
+  if (m.loaded && lastHealth?.ready) {
+    statusEl.textContent = "active";
+    return;
+  }
+  if (pendingTargetId === id || m.status === "starting") {
+    statusEl.textContent = "starting…";
+    return;
+  }
+  statusEl.textContent = m.status || "cold";
+}
+
+function updateLoadButtonState() {
+  const sel = el("model-picker");
+  const btn = el("model-load-btn");
+  const selected = lastModels.find((m) => m.id === sel.value);
+  const globalSwitch = isEngineLoading(lastAdmin);
+  const selectedLoaded = selected?.loaded && lastHealth?.ready;
+  const isTarget =
+    pendingTargetId === sel.value ||
+    ((lastAdmin?.state === "switching" || lastAdmin?.state === "starting") &&
+      lastAdmin?.target_model_id === sel.value);
+
+  btn.disabled =
+    !selected ||
+    globalSwitch ||
+    selectedLoaded ||
+    (selected.status === "starting" && isTarget);
+
+  if (selectedLoaded) {
+    btn.textContent = "Active";
+  } else if (globalSwitch && isTarget) {
+    btn.textContent = "Switching…";
+  } else {
+    btn.textContent = "Switch";
+  }
+
+  el("model-warmup-btn").disabled =
+    !lastHealth?.ready || !lastHealth?.active_model || globalSwitch;
+}
+
+function renderRuntimeTable(models, workers, admin, health) {
   const tbody = el("models-body");
+  const activeId = health.active_model || admin.active_model_id;
+  const targetId = admin.target_model_id || pendingTargetId;
+
   tbody.innerHTML = models
     .map((m) => {
       const w = workerFor(workers, m.id);
-      const caps = (m.capabilities || [])
-        .map((c) => `<span class="badge badge-cap">${esc(c)}</span>`)
-        .join("");
-      return `<tr>
+      let state = m.status || "cold";
+      if (m.id === activeId && m.loaded && health.ready) state = "active";
+      else if (m.id === targetId && (admin.state === "switching" || admin.state === "starting"))
+        state = "starting";
+      const rowClass = m.id === activeId ? ' class="row-active"' : "";
+      return `<tr${rowClass}>
         <td>${esc(m.name || m.id)}</td>
-        <td>${badgeStatus(m.status)}</td>
-        <td>${m.loaded ? '<span class="badge badge-ok">yes</span>' : '<span class="badge">no</span>'}</td>
-        <td>${caps || "—"}</td>
+        <td>${badgeStatus(state)}</td>
         <td>${w ? esc(String(w.port)) : "—"}</td>
         <td>${w && w.pid != null ? esc(String(w.pid)) : "—"}</td>
         <td>${sleepLabel(w ? w.is_sleeping : null)}</td>
-        <td class="source-cell" title="${esc(m.source)}">${esc(m.source)}</td>
       </tr>`;
     })
     .join("");
@@ -557,45 +634,107 @@ function renderTable(models, workers, admin, health) {
   if (switchStartedAt && Date.now() - switchStartedAt > SWITCH_UI_TIMEOUT_MS) {
     el("banner-error").classList.remove("hidden");
     el("banner-error").textContent =
-      "Switch timeout (10 min). Check container logs; the first startup can take a long time.";
+      "Switch timeout (10 min). Check container logs.";
+  }
+}
+
+function applyRuntimeData(health, models, admin) {
+  const workers = admin.workers || [];
+  lastModels = models;
+  lastAdmin = admin;
+  lastHealth = health;
+
+  el("last-refresh").textContent = fmtTime(new Date());
+
+  wireControls();
+  wireConfigEditor();
+  renderStatusLine(health, admin, models);
+  renderSwitchBanner(admin);
+  renderErrorBanner(admin);
+  renderModelPicker(models, admin, health);
+  renderRuntimeTable(models, workers, admin, health);
+  schedulePoll(pollInterval(admin, health));
+}
+
+async function refreshRuntime() {
+  const [healthRes, modelsRes, adminRes] = await Promise.all([
+    fetchJson("/health"),
+    fetchJson("/v1/models"),
+    fetchJson("/v1/admin/models/status"),
+  ]);
+
+  if (!healthRes.ok || !modelsRes.ok || !adminRes.ok) {
+    throw new Error(
+      `API error (health=${healthRes.status}, models=${modelsRes.status}, admin=${adminRes.status})`
+    );
   }
 
-  const globalSwitch = admin.state === "switching";
-  const interval = switching || globalSwitch || !health.ready ? POLL_SWITCH_MS : POLL_STABLE_MS;
-  schedulePoll(interval);
+  applyRuntimeData(healthRes.body, modelsRes.body.data || [], adminRes.body);
+}
+
+async function cancelSwitch() {
+  el("banner-error").classList.add("hidden");
+  el("banner-error").textContent = "";
+  pendingTargetId = null;
+  const { status, body } = await fetchJson("/v1/admin/models/cancel", { method: "POST" });
+  if (status !== 200) {
+    const msg = body?.error?.message || body?.detail || `HTTP ${status}`;
+    el("banner-error").textContent = msg;
+    el("banner-error").classList.remove("hidden");
+  }
+  switching = false;
+  switchStartedAt = null;
+  refreshRuntime().catch(onFetchError);
 }
 
 async function loadModel(modelId) {
+  const selected = lastModels.find((m) => m.id === modelId);
+  if (selected?.loaded && lastHealth?.ready) return;
+
   el("banner-error").classList.add("hidden");
   el("banner-error").textContent = "";
+  pendingTargetId = modelId;
+  userPickedModelId = modelId;
+  switching = true;
+  switchStartedAt = Date.now();
+  updateLoadButtonState();
+  updateSelectionStatus();
+  const priorActive = lastHealth?.active_model || lastAdmin?.active_model_id;
+  const loadState = priorActive && priorActive !== modelId ? "switching" : "starting";
+  const loadMsg =
+    loadState === "starting" ? `Starting vLLM: ${modelId}…` : `Switching to ${modelId}…`;
+  renderSwitchBanner({ state: loadState, target_model_id: modelId, message: loadMsg });
+
   const { status, body } = await fetchJson("/v1/admin/models/load", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model_id: modelId }),
   });
+
   if (status === 202) {
-    switching = true;
-    switchStartedAt = Date.now();
-    await refresh();
+    refreshRuntime().catch(onFetchError);
     return;
   }
+
+  pendingTargetId = null;
+  switching = false;
   const msg =
     body?.error?.message || body?.detail || (status === 503 ? "Switch already in progress" : `HTTP ${status}`);
   el("banner-error").textContent = msg;
   el("banner-error").classList.remove("hidden");
-  await refresh();
+  refreshRuntime().catch(onFetchError);
 }
 
 async function runWarmup() {
   const latEl = el("warmup-latency");
   const activeId = lastHealth?.active_model || lastModels.find((m) => m.loaded)?.id;
   if (!activeId) {
-    latEl.textContent = "no active model";
+    latEl.textContent = "";
     return;
   }
 
   const runId = (runWarmup._seq = (runWarmup._seq || 0) + 1);
-  latEl.textContent = "running…";
+  latEl.textContent = "…";
   const t0 = performance.now();
 
   const { ok, status, body } = await fetchJson("/v1/chat/completions", {
@@ -620,41 +759,4 @@ async function runWarmup() {
   latEl.textContent = `${ms} ms · ${errMsg}`;
 }
 
-async function refresh() {
-  const [healthRes, modelsRes, adminRes] = await Promise.all([
-    fetchJson("/health"),
-    fetchJson("/v1/models"),
-    fetchJson("/v1/admin/models/status"),
-  ]);
-
-  if (!healthRes.ok || !modelsRes.ok || !adminRes.ok) {
-    throw new Error(
-      `API error (health=${healthRes.status}, models=${modelsRes.status}, admin=${adminRes.status})`
-    );
-  }
-
-  const health = healthRes.body;
-  const models = modelsRes.body.data || [];
-  const admin = adminRes.body;
-  const workers = admin.workers || [];
-  lastModels = models;
-  lastHealth = health;
-
-  el("last-refresh").textContent = `Updated ${fmtTime(new Date())}`;
-
-  wireControls();
-  wireConfigEditor();
-  if (!configEditorInitialized) {
-    await loadConfigEditor();
-    configEditorInitialized = true;
-  }
-  renderConfigModelsTable(models);
-  renderCards(health, admin, models);
-  renderSwitchBanner(admin);
-  renderErrorBanner(admin);
-  renderSummary(models, workers, admin);
-  renderModelPicker(models, admin, health);
-  renderTable(models, workers, admin, health);
-}
-
-refresh().catch(onFetchError);
+refreshRuntime().catch(onFetchError);

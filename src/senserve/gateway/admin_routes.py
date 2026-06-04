@@ -66,12 +66,12 @@ def create_admin_router(supervisor: EngineSupervisor) -> APIRouter:
         from senserve.gateway.errors import openai_error_response
 
         st = supervisor.status()
-        if st.state == EngineState.SWITCHING:
+        if st.state in (EngineState.SWITCHING, EngineState.STARTING):
             return JSONResponse(
                 status_code=409,
                 content={
                     "error": {
-                        "message": "Cannot save config while model switch is in progress",
+                        "message": "Cannot save config while a model is loading",
                         "type": "config_conflict",
                     }
                 },
@@ -138,5 +138,16 @@ def create_admin_router(supervisor: EngineSupervisor) -> APIRouter:
 
             return openai_error_response(str(exc), status_code=400)
         return {"status": "accepted", "model_id": body.model_id}
+
+    @router.post("/models/cancel", status_code=200)
+    def models_cancel():
+        st = supervisor.cancel_switch()
+        return {
+            "state": st.state.value,
+            "active_model_id": st.active_model_id,
+            "target_model_id": st.target_model_id,
+            "message": st.message,
+            "error": st.error,
+        }
 
     return router

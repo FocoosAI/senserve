@@ -44,12 +44,13 @@ services:
               capabilities: [gpu]
     # Default: load Qwen3.5 0.8B (id qwen3.5-0.8b in config/models.yaml)
     command: ["uv", "run", "senserve"]
+    # /health returns 200 as soon as the gateway is up (ready may still be false while vLLM starts).
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:8787/health"]
       interval: 15s
       timeout: 20s
       retries: 30
-      start_period: 100s
+      start_period: 30s
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:main

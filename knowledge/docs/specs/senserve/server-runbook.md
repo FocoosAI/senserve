@@ -1,7 +1,7 @@
 ---
 id: SPEC-senserve-server-runbook
 title: Senserve server runbook
-description: Operational symptoms and mitigations for the Senserve gateway and vLLM worker pool — 503 switching, readiness, sleep/wake, catalog save conflicts, UI vLLM flags.
+description: Runbook for Senserve gateway — 503 during starting/switching, gateway up before ready, stuck load cancel, worker exit fail-fast, sleep/wake, config 409, vLLM flags preload.
 status: accepted
 type: spec
 domain: senserve
@@ -13,11 +13,23 @@ related:
 
 # Senserve server runbook
 
+## Symptoms: gateway/UI up but chat returns 503 / `ready: false`
+
+- **Causes**: normal during engine `starting` (first default model load) or `switching`; vLLM still warming on GPU.
+- **Mitigation**: poll `GET /health` until `engine: ready` and `ready: true`; watch `GET /v1/admin/models/status` and dashboard Workers table.
+- **Note**: `/health` returns **200** while not ready — distinguish gateway liveness from model readiness.
+
 ## Symptoms: repeated 503 on chat with `model_switching`
 
 - **Causes**: large model download/HF cache; vLLM warmup; prior worker still terminating.
 - **Mitigation**: wait for `Retry-After`; check `GET /v1/admin/models/status` and container logs; confirm GPU memory free.
 - **Prevention**: pre-load via admin endpoint or `--load` before traffic; size `start_period` healthcheck for slow first pull.
+
+## Symptoms: engine stuck in `starting` or `switching` with `pid: null` / target worker dead
+
+- **Causes**: vLLM subprocess exited during startup (CUDA/NVML, OOM); prior behavior waited up to `worker_ready_timeout_s` (~600s) on HTTP poll only.
+- **Mitigation**: use **Cancel switch** in the dashboard or `POST /v1/admin/models/cancel` to kill the target worker and restore the previous active model; check `docker compose logs senserve` and `nvidia-smi` inside the container; restart the service if the GPU driver is wedged.
+- **Prevention**: engine now fails fast when the worker process exits before ready; failed switches roll back to the prior active model when possible.
 
 ## Symptoms: worker never becomes ready
 
@@ -36,13 +48,13 @@ related:
 
 ## Symptoms: catalog save returns 409 from dashboard
 
-- **Causes**: engine `switching`; or edit changes `source` / per-model `vllm` / `enabled` on the **active** model while `ready`.
-- **Mitigation**: wait for switch to finish; load another model first, or edit only non-active entries; unload via switch before changing active model flags.
+- **Causes**: engine `starting` or `switching`; or edit changes `source` / per-model `vllm` / `enabled` on the **active** model while `ready`.
+- **Mitigation**: wait for load/switch to finish; load another model first, or edit only non-active entries; unload via switch before changing active model flags.
 
 ## Symptoms: vLLM autocomplete empty in Configuration UI
 
-- **Causes**: `GET /v1/admin/vllm/flags` returns 503 when `vllm` is not on PATH inside the container.
-- **Mitigation**: ensure vLLM is installed in the image; use `?refresh=1` after upgrading vLLM; manual key entry still works.
+- **Causes**: `preload_at_startup()` failed at boot (vLLm missing on PATH) so `GET /v1/admin/vllm/flags` returns 503; or config panel opened before lifespan preload on non-CLI entrypoints.
+- **Mitigation**: check startup logs for "Preloaded N vLLM serve flags"; ensure vLLM is in the image; `GET /v1/admin/vllm/flags?refresh=1` after upgrading vLLM; manual key entry still works.
 
 ## Related
 

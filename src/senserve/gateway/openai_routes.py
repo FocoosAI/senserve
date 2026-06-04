@@ -26,7 +26,7 @@ def _catalog_model_status(
     worker = workers_by_id.get(model_id)
     if worker is not None:
         return worker.state.value
-    if st.state == EngineState.SWITCHING and st.target_model_id == model_id:
+    if st.state in (EngineState.SWITCHING, EngineState.STARTING) and st.target_model_id == model_id:
         return "starting"
     return "cold"
 
@@ -79,12 +79,12 @@ def create_openai_router(supervisor: EngineSupervisor) -> APIRouter:
             return openai_error_response(f"Unknown model: {model_id}", status_code=404)
 
         st = supervisor.status()
-        if st.state == EngineState.SWITCHING:
+        if st.state in (EngineState.SWITCHING, EngineState.STARTING):
             return switching_response(f"Loading model {st.target_model_id}; retry shortly")
 
         active = supervisor.active_model_id()
         if active != model_id:
-            if st.state != EngineState.SWITCHING:
+            if st.state not in (EngineState.SWITCHING, EngineState.STARTING):
                 supervisor.load(model_id)
             return switching_response(f"Loading model {model_id}; retry shortly")
 

@@ -44,7 +44,7 @@ def test_startup_loads_default_model(mock_sup_cls, _mock_app, _mock_uvicorn):
 
         main()
 
-    sup.load_blocking.assert_called_once_with("m1")
+    sup.load.assert_called_once_with("m1")
 
 
 @patch("senserve.cli.uvicorn.run")
@@ -60,7 +60,7 @@ def test_startup_idle_without_default(mock_sup_cls, _mock_app, _mock_uvicorn):
 
         main()
 
-    sup.load_blocking.assert_not_called()
+    sup.load.assert_not_called()
 
 
 @patch("senserve.cli.uvicorn.run")
@@ -76,4 +76,4 @@ def test_startup_no_load_flag(mock_sup_cls, _mock_app, _mock_uvicorn):
 
         main()
 
-    sup.load_blocking.assert_not_called()
+    sup.load.assert_not_called()

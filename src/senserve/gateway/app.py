@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from senserve import __version__
+from senserve import __version__, vllm_flags
 from senserve.engine import EngineState, EngineSupervisor
 from senserve.gateway.admin_routes import create_admin_router
 from senserve.gateway.middleware import MaxBodySizeMiddleware
@@ -16,11 +21,21 @@ from senserve.settings import get_settings
 _UI_DIR = Path(__file__).resolve().parent / "static" / "ui"
 
 
+@asynccontextmanager
+async def _app_lifespan(_app: FastAPI):
+    if not vllm_flags.is_preloaded():
+        try:
+            await asyncio.to_thread(vllm_flags.preload_at_startup)
+        except Exception:
+            logger.warning("vLLM flags preload failed in lifespan", exc_info=True)
+    yield
+
+
 def create_app(supervisor: EngineSupervisor | None = None) -> FastAPI:
     settings = get_settings()
     sup = supervisor or EngineSupervisor()
 
-    app = FastAPI(title="Senserve", version=__version__)
+    app = FastAPI(title="Senserve", version=__version__, lifespan=_app_lifespan)
     app.state.supervisor = sup
 
     app.add_middleware(

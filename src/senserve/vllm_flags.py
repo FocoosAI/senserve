@@ -1,17 +1,18 @@
-"""Parse vLLM serve CLI flags from `vllm serve --help` (cached)."""
+"""vLLM serve CLI flags parsed once from `vllm serve --help` at backend startup."""
 
 from __future__ import annotations
 
+import logging
 import re
 import subprocess
-import time
 from dataclasses import dataclass
 
-_FLAG_LINE = re.compile(r"^\s{2,}(--[\w][\w.-]*)(?:\s+([A-Z][A-Z_]+))?\s*$")
-_CACHE_TTL_S = 3600.0
+logger = logging.getLogger(__name__)
 
-_cache: list[dict] | None = None
-_cache_at: float = 0.0
+_FLAG_LINE = re.compile(r"^\s{2,}(--[\w][\w.-]*)(?:\s+([A-Z][A-Z_]+))?\s*$")
+
+# Populated by preload_at_startup() before the gateway serves traffic.
+_vllm_flags: list[dict] | None = None
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,18 @@ def _parse_help(text: str) -> list[VllmFlag]:
     return flags
 
 
+def _flags_to_dicts(flags: list[VllmFlag]) -> list[dict]:
+    return [
+        {
+            "cli_name": f.cli_name,
+            "yaml_name": f.yaml_name,
+            "consumes_value": f.consumes_value,
+            "arg_hint": f.arg_hint,
+        }
+        for f in flags
+    ]
+
+
 def _fetch_help_text() -> str:
     try:
         proc = subprocess.run(
@@ -71,23 +84,24 @@ def _fetch_help_text() -> str:
     return proc.stdout or ""
 
 
-def list_vllm_flags(*, refresh: bool = False) -> list[dict]:
-    """Return cached flag metadata for UI autocomplete."""
-    global _cache, _cache_at
-    now = time.monotonic()
-    if not refresh and _cache is not None and (now - _cache_at) < _CACHE_TTL_S:
-        return _cache
+def is_preloaded() -> bool:
+    return _vllm_flags is not None
 
+
+def preload_at_startup() -> None:
+    """Run `vllm serve --help` and store parsed flags in ``_vllm_flags``."""
+    global _vllm_flags
     text = _fetch_help_text()
-    flags = _parse_help(text)
-    _cache = [
-        {
-            "cli_name": f.cli_name,
-            "yaml_name": f.yaml_name,
-            "consumes_value": f.consumes_value,
-            "arg_hint": f.arg_hint,
-        }
-        for f in flags
-    ]
-    _cache_at = now
-    return _cache
+    parsed = _parse_help(text)
+    _vllm_flags = _flags_to_dicts(parsed)
+    logger.info("Preloaded %d vLLM serve flags from --help", len(_vllm_flags))
+
+
+def list_vllm_flags(*, refresh: bool = False) -> list[dict]:
+    """Return startup-cached flag metadata; optional refresh re-runs --help."""
+    global _vllm_flags
+    if refresh:
+        preload_at_startup()
+    if _vllm_flags is None:
+        raise RuntimeError("vLLM flags not loaded at startup")
+    return _vllm_flags

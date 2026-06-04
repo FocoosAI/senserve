@@ -42,7 +42,7 @@ Default is cordon — one ADR declares the source out of scope for `/keep-ask` a
 
 `init.sh` appends the canonical KEEP snippet to `AGENTS.md` / `CLAUDE.md` / `.cursorrules` (whichever exists; creates `AGENTS.md` otherwise).
 
-**Single source of truth: the `## AGENTS.md snippet — install in the repo` section of `SKILL.md`.** Don't duplicate the snippet here — duplication causes drift.
+**Single source of truth: the heredoc in `scripts/init.sh`** — that's the code that actually writes the snippet, so it can't drift from what lands in the repo. Don't paste the verbatim snippet here or in `SKILL.md`; both only describe it and point back to `init.sh`.
 
 The snippet is intentionally hard:
 

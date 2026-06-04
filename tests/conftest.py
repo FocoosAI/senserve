@@ -5,10 +5,20 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from senserve import vllm_flags
 from senserve.engine import EngineState, EngineSupervisor, WorkerState, _Worker
 from senserve.gateway.app import create_app
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+@pytest.fixture(autouse=True)
+def vllm_flags_preloaded():
+    """Avoid subprocess vllm --help during TestClient lifespan."""
+    prev = vllm_flags._vllm_flags
+    vllm_flags._vllm_flags = []
+    yield
+    vllm_flags._vllm_flags = prev
 
 
 @pytest.fixture

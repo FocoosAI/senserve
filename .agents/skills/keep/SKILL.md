@@ -19,7 +19,7 @@ KEEP is failing if it triggers only on code changes. The read path — consultin
 
 The user is reaching for information that *should be* in `/knowledge`. Even if the answer is also in code, the knowledge layer has the **why** (rationale, rejected alternatives, edge cases) that code does not. Antipattern: answering from memory or grep.
 
-**Decision-grade cross-check.** When the user is about to act on the answer (merge, deploy, debug-in-progress), `/keep-ask` consults `/knowledge` first *then* verifies anchored load-bearing claims against code — a spec can drift between merges, and the user deserves the warning before they act. Cues: *"sto per mergeare"*, *"is this still true"*, *"safe to deploy?"*. See `commands/keep-ask.md`.
+**Decision-grade cross-check.** When the user is about to act on the answer (merge, deploy, debug-in-progress), `/keep-ask` consults `/knowledge` first *then* verifies anchored load-bearing claims against code — a spec can drift between merges, and the user deserves the warning before they act. Cues: *"sto per mergeare"*, *"is this still true"*, *"safe to deploy?"*. See `references/commands/keep-ask.md`.
 
 **Write** — run `/keep-compile` after non-trivial code changes in a `/knowledge`-enabled repo: new features, dependency/framework swaps, topology changes, post-incident fixes, runtime-affecting config changes.
 
@@ -66,7 +66,9 @@ Full frontmatter schema and templates per type: `references/file_formats.md`. Mo
 | `/keep-idea <thought>` | Capture as `type: idea`, `status: draft` in `ideas/`. Search for prior art first. Promotion is later via `/keep-compile`. | Yes |
 | `/keep-govern` | Periodic hygiene (weekly at most): stale files, contradicting ADRs, oversize specs, aging draft ideas, `TODO(KEEP)` markers. Suggestions only. | No |
 
-Each command has a contract in `commands/<name>.md`. The skill body behaves the same when triggered via slash command or natural language.
+This table is the index, not the contract. Each command's full behavior — phases, hard rules, output format — lives in `references/commands/<name>.md` (bundled inside the skill, so it travels with skill-only installs as well as the full plugin); read the relevant one before executing a command. The skill body deliberately keeps only the two cross-cutting distinctions that span commands (below); everything command-specific is in the contracts. Behavior is identical whether the command is invoked as a slash command or in natural language.
+
+> **`<skill-path>` convention.** The contracts invoke scripts as `<skill-path>/scripts/<name>.py`. `<skill-path>` is the directory that contains *this* `SKILL.md` — resolve it from where you're reading the skill from, never hardcode it. KEEP is installed at different paths depending on the host (`~/.claude/skills/keep`, a plugin dir, or vendored into a repo as `.agents/skills/keep`), so a literal path like `skills/KEEP/scripts/…` only works inside the KEEP source repo and breaks everywhere else. The scripts locate their own siblings (`_keep.py`, `coverage.py`) internally, so they run correctly from any location once you invoke them with the right `<skill-path>`.
 
 ### `/keep-compile` — pre-existing docs as source
 
@@ -107,6 +109,8 @@ A spec may declare an `anchors:` block — structured claims (kind: const | func
 `/keep-compile` proposes anchor candidates from concrete values in the diff *by default* — anchor proposal is part of writing the spec, not an optional add-on. Rule: no anchor without evidence (only propose anchors for values present in the diff), not "no anchor at all".
 
 `scripts/coverage.py` reports the silent KPI of a KEEP-enabled repo: what fraction of load-bearing code symbols are referenced by at least one anchor. The `/keep` dashboard surfaces the aggregate.
+
+**Why coverage stalls, and the loop that grows it.** Anchors get proposed at spec-birth, from the values in one diff. That alone leaves coverage near zero forever: the diff that introduces a spec rarely touches every symbol the spec is *about*, and nothing revisits it afterward. Coverage only climbs if something periodically asks *"what does the knowledge layer already claim to describe, but not enforce?"* — and that gap has a precise, non-theater definition: a spec whose `related:` already points at a code file or test, where that symbol has **no** anchor. The spec asserts it matters; drift can't see it. Those are the high-value candidates, and they're load-bearing by construction — you are not inventing importance to bump a number, you are closing the gap between what a spec says it covers and what drift actually verifies. `/keep-govern` runs this check periodically and proposes anchoring them; the `/keep` dashboard surfaces it when coverage is low. Anchoring symbols *no* spec references would be the theater the rule against "no anchor without evidence" exists to prevent — don't.
 
 ## Asking the user
 
@@ -152,46 +156,11 @@ Periodic:
 
 ## AGENTS.md snippet — install in the repo
 
-`scripts/init.sh` appends this to whichever entry file exists at the repo root (`AGENTS.md` / `CLAUDE.md` / `.cursorrules`). Wording is intentionally hard — softening it (e.g. *"some of these"* instead of *"ANY of these"*) measurably reduces read-path triggering.
+`/keep-init` (via `scripts/init.sh`) appends a KEEP snippet to whichever entry file exists at the repo root (`AGENTS.md` / `CLAUDE.md` / `.cursorrules`). The snippet routes the agent to `/keep-ask` before answering, `/keep-compile` after non-trivial changes, `/keep-check-drift` before merge, and `/keep-idea` for parked thoughts.
 
-```md
-## KEEP — Knowledge layer for this repository
+**The verbatim text lives in exactly one place: the heredoc in `scripts/init.sh`.** It is deliberately not duplicated here — two copies drift, and the one that actually gets written is `init.sh`'s. Read or edit it there.
 
-`/knowledge/` is the authoritative source of truth for:
-- WHAT this system does (specs)
-- WHY it is built this way (ADRs)
-- HOW it operates under failure (specs with tag `runbook`)
-- WHERE components live and connect (specs with tag `architecture`)
-- WHAT we've been thinking about but not yet committed to (ideas)
-
-### Mandatory consultation before responding
-
-Before answering ANY of these, run `/keep-ask <topic>` first:
-- Questions about system behavior, design, or history
-- Questions naming a feature, service, ADR, endpoint, or domain
-- Requests to implement, modify, refactor, or remove existing behavior
-- Any uncertainty about whether a decision or convention exists
-
-If `/keep-ask` returns "no indexed knowledge", say so explicitly — do NOT
-fall back to generic knowledge as if it were repo truth.
-
-### After non-trivial code changes
-
-Run `/keep-compile` before declaring the work done. A change that touches
-behavior, architecture, or operations without updating `/knowledge` is incomplete.
-
-### Before merging
-
-Run `/keep-check-drift`. Exit-code 1 blocks merge.
-
-### Periodic
-
-`/keep-govern` weekly for hygiene.
-
-### Capture, don't drop
-
-Half-formed ideas → `/keep-idea "..."`. Don't lose them in chat.
-```
+Why the wording is intentionally hard: softening it (e.g. *"some of these"* instead of *"ANY of these"*, dropping "Mandatory") measurably reduces read-path triggering — the agent stops consulting `/knowledge` and silently falls back to generic knowledge, which is the single failure mode KEEP exists to prevent. If you ever audit an entry file and find a softened snippet, restore the canonical one from `init.sh`.
 
 ## Anti-goals
 
@@ -203,4 +172,5 @@ KEEP must not become a documentation generator, a project management/ticketing s
 - `references/brownfield.md` — `/keep-compile` against pre-existing docs: the ask flow (migrate vs cordon), the verify-and-curate migration pass, classification heuristics, cordon ADR template. Read before invoking `/keep-compile` on anything other than a git diff.
 - `references/monorepo.md` — monorepo layout and per-package routing. Read when adopting on a monorepo.
 - `references/setup.md` — AGENTS.md adoption notes, common mistakes, copy-paste CI/pre-commit templates. Read once at adoption.
+- `references/commands/<name>.md` — per-command contracts for all seven commands (`keep`, `keep-init`, `keep-ask`, `keep-compile`, `keep-check-drift`, `keep-idea`, `keep-govern`). Read the relevant one when executing or explaining a command, whether invoked as a slash command or in natural language.
 - `references/templates/SPEC-000-keep.md` — self-spec installed by `/keep-init` so KEEP's conventions outlast the skill.
