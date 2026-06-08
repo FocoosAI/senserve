@@ -27,7 +27,7 @@ models:
     source: Qwen/Qwen3.5-0.8B
     capabilities: [text, vision, video]
     enabled: true
-    default: true
+    default: false
     vllm:
       speculative_config: '{"method": "mtp", "num_speculative_tokens": 3}'
 
@@ -43,14 +43,14 @@ models:
     #   max_model_len: 8192
 
   - id: gemma-4-26b-a4b-nvfp4
-    display_name: Gemma 4 26B NVFP4
+    display_name: cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit
     source: cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit
     capabilities: [text, image, video]
     enabled: true
-    default: false
+    default: true
     vllm:
-      gpu_memory_utilization: 0.9
+      gpu_memory_utilization: 0.8
       tool_call_parser: gemma4
       enable_auto_tool_choice: true
       trust_remote_code: true
-      max_num_batched_tokens: 8192
+      max_num_batched_tokens: 60000

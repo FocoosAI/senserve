@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
 
 import httpx
 
@@ -17,7 +19,7 @@ def _root_url(port: int) -> str:
     return f"http://127.0.0.1:{port}"
 
 
-def is_sleeping(port: int, timeout: float = 10.0) -> bool | None:
+def is_sleeping(port: int, timeout: float = 3.0) -> bool | None:
     """Return sleep state, or None if endpoint unavailable."""
     try:
         r = httpx.get(f"{_root_url(port)}/is_sleeping", timeout=timeout)
@@ -34,18 +36,54 @@ def is_sleeping(port: int, timeout: float = 10.0) -> bool | None:
         return None
 
 
-def sleep_worker(port: int, level: int = 2, timeout: float = 120.0) -> None:
-    """Put a vLLM worker to sleep (frees GPU memory, keeps process alive)."""
-    try:
-        r = httpx.post(
-            f"{_root_url(port)}/sleep",
-            params={"level": level},
-            timeout=timeout,
-        )
-        r.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise VllmSleepError(f"sleep failed on port {port}: {exc}") from exc
-    logger.info("vLLM worker on port %s sleeping (level=%s)", port, level)
+def sleep_worker(
+    port: int,
+    level: int = 2,
+    timeout: float = 600.0,
+    *,
+    cancel_event: threading.Event | None = None,
+    poll_interval_s: float = 5.0,
+) -> None:
+    """Put a vLLM worker to sleep (frees GPU memory, keeps process alive).
+
+    Uses short HTTP chunks so cancel can interrupt and vLLM can finish draining
+    in-flight requests without a single long read timeout.
+    """
+    deadline = time.monotonic() + timeout
+    url = f"{_root_url(port)}/sleep"
+    params = {"level": level}
+    last_timeout: httpx.ReadTimeout | None = None
+
+    while time.monotonic() < deadline:
+        if cancel_event and cancel_event.is_set():
+            raise VllmSleepError(f"sleep cancelled on port {port}")
+
+        remaining = deadline - time.monotonic()
+        chunk = min(poll_interval_s, remaining)
+        if chunk <= 0:
+            break
+
+        try:
+            r = httpx.post(url, params=params, timeout=chunk)
+            r.raise_for_status()
+        except httpx.ReadTimeout as exc:
+            last_timeout = exc
+            logger.debug("sleep still in progress on port %s (%.1fs chunk)", port, chunk)
+            continue
+        except httpx.HTTPError as exc:
+            raise VllmSleepError(f"sleep failed on port {port}: {exc}") from exc
+        else:
+            logger.info("vLLM worker on port %s sleeping (level=%s)", port, level)
+            return
+
+    hint = (
+        "vLLM may be waiting for in-flight requests — stop chat clients and retry, "
+        "or set SENSERVE_SLEEP_MODE=off"
+    )
+    msg = f"sleep failed on port {port}: timed out after {timeout:.0f}s ({hint})"
+    if last_timeout is not None:
+        raise VllmSleepError(msg) from last_timeout
+    raise VllmSleepError(msg)
 
 
 def wake_worker_l1(port: int, timeout: float = 600.0) -> None:

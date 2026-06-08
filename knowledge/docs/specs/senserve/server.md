@@ -131,6 +131,22 @@ anchors:
     kind: test
     file: tests/test_engine_switch.py
     symbol: test_cancel_switch_restores_prior_active
+  - id: worker-sleep-timeout
+    claim: Default worker sleep HTTP budget is 600 seconds via worker_sleep_timeout_s
+    kind: const
+    file: src/senserve/settings.py
+    symbol: worker_sleep_timeout_s
+    value: "600.0"
+  - id: sleep-fallback-kill
+    claim: VllmSleepError during _sleep_active kills the active worker and continues the switch
+    kind: test
+    file: tests/test_engine_switch.py
+    symbol: test_sleep_failure_kills_active_and_continues_switch
+  - id: sleep-cancel-abort
+    claim: load abort during sleep raises LoadAbortedError without killing the active worker
+    kind: test
+    file: tests/test_engine_switch.py
+    symbol: test_sleep_cancel_raises_load_aborted
   - id: vllm-flags-endpoint
     claim: GET /v1/admin/vllm/flags lists vLLM serve CLI flags preloaded at startup
     kind: manual
@@ -236,6 +252,7 @@ Client / Open WebUI
 - No model loaded (`--no-load`) → chat returns **503** until a model is loaded.
 - Startup: `--load MODEL_ID`, or first model with `default: true` in catalog, or idle if none; `--no-load` always idle. Default model load runs in background (`engine` `starting`); gateway listens immediately; synchronous load failure on CLI only if `load()` raises before the thread starts.
 - Worker readiness polled up to `worker_ready_timeout_s` (default 600s) against worker `GET /v1/models`; if the vLLM subprocess exits first, switch fails immediately and rolls back when a prior active model exists.
+- Sleep during switch uses chunked `POST /sleep` polls (`worker_sleep_timeout_s`, default 600s); **Cancel switch** sets `_load_abort` and interrupts within one poll chunk (~5s); on `VllmSleepError` the active worker is killed and the switch continues (cold-start target) instead of failing the whole operation.
 - `SENSERVE_SLEEP_MODE=off`: single port, kill+restart on switch (legacy).
 - Per-model worker ports: `SENSERVE_WORKER_BASE_PORT + index` over enabled models sorted by id (when sleep mode on).
 - During `starting` or `switching`, catalog `status` for `target_model_id` is `starting` even before a worker row exists.

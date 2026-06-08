@@ -10,12 +10,14 @@ import pytest
 from senserve.engine import (
     EngineState,
     EngineSupervisor,
+    LoadAbortedError,
     WorkerExitError,
     WorkerState,
     _Worker,
     _check_process_alive,
     _wait_ready,
 )
+from senserve import vllm_sleep
 from senserve.registry import ModelRegistry, ModelSpec
 
 
@@ -121,3 +123,55 @@ def test_failed_switch_kills_target_and_restores_active():
     assert st.state.value == "ready"
     assert st.error is not None
     assert "exited" in st.error
+
+
+def test_sleep_failure_kills_active_and_continues_switch():
+    reg = _registry("a", "b")
+    sup = EngineSupervisor(registry=reg)
+    sup._workers["a"] = _Worker(spec=_spec("a"), process=None, port=8000, state=WorkerState.READY)
+    sup._active_id = "a"
+    sup._state = EngineState.SWITCHING
+    sup._target = "b"
+
+    with (
+        patch("senserve.engine.vllm_sleep.sleep_worker", side_effect=vllm_sleep.VllmSleepError("timed out")),
+        patch.object(sup, "_kill_worker") as kill,
+        patch.object(sup, "_start_and_wait"),
+    ):
+        sup._switch_sleep_mode(_spec("b"))
+
+    kill.assert_called_once_with("a")
+
+
+def test_sleep_cancel_raises_load_aborted():
+    reg = _registry("a", "b")
+    sup = EngineSupervisor(registry=reg)
+    sup._workers["a"] = _Worker(spec=_spec("a"), process=None, port=8000, state=WorkerState.READY)
+    sup._load_abort.set()
+
+    with (
+        patch(
+            "senserve.engine.vllm_sleep.sleep_worker",
+            side_effect=vllm_sleep.VllmSleepError("sleep cancelled on port 8000"),
+        ),
+        patch.object(sup, "_kill_worker") as kill,
+    ):
+        with pytest.raises(LoadAbortedError):
+            sup._sleep_active("a")
+
+    kill.assert_not_called()
+
+
+def test_load_sync_ignores_errors_after_cancel_abort():
+    reg = _registry("a", "b")
+    sup = EngineSupervisor(registry=reg)
+    sup._workers["a"] = _Worker(spec=_spec("a"), process=None, port=8000, state=WorkerState.READY)
+    sup._active_id = "a"
+    sup._state = EngineState.SWITCHING
+    sup._target = "b"
+    sup._load_abort.set()
+
+    with patch.object(sup, "_switch_sleep_mode", side_effect=RuntimeError("late failure")):
+        sup._load_sync(_spec("b"))
+
+    assert sup.status().state == EngineState.SWITCHING

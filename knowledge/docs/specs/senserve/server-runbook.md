@@ -43,8 +43,8 @@ related:
 
 ## Symptoms: sleep/wake errors in logs (`VllmSleepError`)
 
-- **Causes**: worker process died; admin endpoints 404; sleep called while worker not ready.
-- **Mitigation**: inspect worker logs; set `SENSERVE_SLEEP_MODE=off` temporarily; kill stale processes on worker ports.
+- **Causes**: worker process died; admin endpoints 404; sleep called while worker not ready; **sleep HTTP timed out** while vLLM waits for in-flight chat (Open WebUI streams on the active model).
+- **Mitigation**: stop client traffic to the active model, then retry switch; use **Cancel switch** (`POST /v1/admin/models/cancel`) — cancel interrupts sleep within ~5s and restores the prior active model; on sleep timeout the engine **kills** the active worker and continues the switch instead of staying stuck for 120s; raise `SENSERVE_WORKER_SLEEP_TIMEOUT_S` (default 600, same order as ready timeout) for very large models; set `SENSERVE_SLEEP_MODE=off` temporarily; inspect worker logs and stale processes on worker ports.
 
 ## Symptoms: catalog save returns 409 from dashboard
 

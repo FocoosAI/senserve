@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     inline_remote_media: bool = False
     validate_capabilities: bool = True
     worker_ready_timeout_s: float = 600.0
+    worker_sleep_timeout_s: float = 600.0
     switch_retry_after_s: int = 30
     sleep_mode: Literal["off", "level1", "level2"] = "level2"
     max_workers: int = 16

@@ -74,6 +74,10 @@ class WorkerExitError(RuntimeError):
         super().__init__(f"vLLM worker for {model_id} exited before ready (code {code})")
 
 
+class LoadAbortedError(Exception):
+    """Load/switch cancelled via cancel_switch."""
+
+
 @dataclass
 class _Worker:
     spec: ModelSpec
@@ -182,6 +186,7 @@ class EngineSupervisor:
         self._message = ""
         self._error: str | None = None
         self._switch_cancel_handled = False
+        self._load_abort = threading.Event()
         self._port_index = self._build_port_index()
 
     def _build_port_index(self) -> dict[str, int]:
@@ -213,11 +218,12 @@ class EngineSupervisor:
 
     def list_workers(self) -> list[WorkerInfo]:
         with self._lock:
+            loading = self._state in _LOADING_STATES
             out: list[WorkerInfo] = []
             for mid, w in self._workers.items():
                 pid = w.process.pid if w.process and w.process.poll() is None else None
                 sleeping = None
-                if self._settings.sleep_enabled and w.state != WorkerState.COLD:
+                if self._settings.sleep_enabled and w.state != WorkerState.COLD and not loading:
                     sleeping = vllm_sleep.is_sleeping(w.port)
                 out.append(
                     WorkerInfo(
@@ -255,7 +261,12 @@ class EngineSupervisor:
             self._message = f"{verb} {model_id}..."
             self._error = None
             self._switch_cancel_handled = False
+            self._load_abort.clear()
         return load_state
+
+    def _check_load_abort(self) -> None:
+        if self._load_abort.is_set():
+            raise LoadAbortedError()
 
     def backend_base_url(self) -> str:
         self.reject_if_switching()
@@ -298,6 +309,7 @@ class EngineSupervisor:
             rollback_id = self._active_id
             self._switch_cancel_handled = True
             self._target = None
+        self._load_abort.set()
         if target_id:
             self._kill_worker(target_id)
             worker = self._workers.get(target_id)
@@ -318,8 +330,9 @@ class EngineSupervisor:
                 self._switch_sleep_mode(spec)
             else:
                 self._switch_kill_restart(spec)
+            self._check_load_abort()
             with self._lock:
-                if self._switch_cancel_handled:
+                if self._switch_cancel_handled or self._load_abort.is_set():
                     return
                 self._active_id = spec.id
                 self._state = EngineState.READY
@@ -327,7 +340,12 @@ class EngineSupervisor:
                 self._message = f"Loaded {spec.id}"
                 self._error = None
                 logger.info("Model %s ready on port %s", spec.id, self._port_for(spec.id))
+        except LoadAbortedError:
+            logger.info("Load of %s aborted", spec.id)
         except Exception as exc:
+            if self._load_abort.is_set():
+                logger.info("Load of %s aborted after error: %s", spec.id, exc)
+                return
             logger.exception("Failed to load model %s", spec.id)
             with self._lock:
                 if self._switch_cancel_handled:
@@ -431,6 +449,7 @@ class EngineSupervisor:
         active_id = self._active_id
         if active_id and active_id != spec.id:
             self._sleep_active(active_id)
+        self._check_load_abort()
 
         worker = self._workers.get(spec.id)
         port = self._port_for(spec.id)
@@ -461,8 +480,25 @@ class EngineSupervisor:
         worker = self._workers.get(active_id)
         if not worker or worker.state != WorkerState.READY:
             return
-        vllm_sleep.sleep_worker(worker.port, level=self._settings.sleep_level)
-        worker.state = WorkerState.SLEEPING
+        self._check_load_abort()
+        try:
+            vllm_sleep.sleep_worker(
+                worker.port,
+                level=self._settings.sleep_level,
+                timeout=self._settings.worker_sleep_timeout_s,
+                cancel_event=self._load_abort,
+            )
+            worker.state = WorkerState.SLEEPING
+        except vllm_sleep.VllmSleepError as exc:
+            if self._load_abort.is_set():
+                raise LoadAbortedError() from exc
+            logger.warning(
+                "Sleep failed for %s on port %s (%s); killing worker to continue switch",
+                active_id,
+                worker.port,
+                exc,
+            )
+            self._kill_worker(active_id)
 
     def _start_and_wait(self, worker: _Worker) -> None:
         if worker.process and worker.process.poll() is None:
