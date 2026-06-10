@@ -1,12 +1,10 @@
-FROM isnob46/dgx-vllm-cu13:0211rc1
+# L40 / x86_64 (Ada Lovelace). DGX image isnob46/dgx-vllm-cu13 is arm64-only.
+FROM vllm/vllm-openai:v0.22.0
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     HF_HOME=/root/.cache/huggingface \
-    UV_PYTHON=3.12 \
-    TORCH_CUDA_ARCH_LIST=9.0a \
-    FLASHINFER_CUDA_ARCH_LIST=9.0a \
-    VLLM_USE_FLASHINFER_SAMPLER=0
+    UV_PYTHON=3.12 
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -26,5 +24,6 @@ ENV PATH="/app/.venv/bin:/root/.local/bin:${PATH}"
 
 EXPOSE 8787
 
+# vllm-openai base image sets ENTRYPOINT ["vllm", "serve"]; clear it for senserve.
 ENTRYPOINT []
-CMD ["uv", "run", "senserve", "--load", "qwen3.5-0.8b"]
+CMD ["uv", "run", "senserve"]
